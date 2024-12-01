@@ -62,9 +62,13 @@ def is_valid_game(game_id):
         if response.status_code == 200:
             data = response.json()
             if data[str(game_id)]["success"]:
-                return True, data[str(game_id)]["data"]["name"]
+                app_data = data[str(game_id)]["data"]
+                if app_data["type"] == "game":
+                    return True, app_data["name"]
+                else:
+                    return False, f"Type is {app_data['type']}"
         return False, None
-    except:
+    except Exception:
         return False, None
 
 
