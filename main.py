@@ -2,6 +2,7 @@ import configparser
 import asyncio
 import json
 import requests
+import re
 from bs4 import BeautifulSoup
 from pyrogram import Client, filters
 from pyrogram.types import BotCommand
@@ -14,7 +15,7 @@ COMMANDS_DESCRIPTION = [
 ]
 GAME_LIST_HEADER = "<b>Steam games list:</b>"
 GAME_LIST_EMPTY = "No games added yet."
-ADD_GAME_USAGE = "To add a game, use: <code>add GAME_ID</code>"
+ADD_GAME_USAGE = "To add a game, use: <code>add GAME_ID</code> or <code>add URL</code>"
 REMOVE_GAME_USAGE = "To remove a game, use: <code>rm GAME_ID</code>"
 ADD_GAME_SUCCESS = "Game [ <code>{game_id}</code> ] - <b>\"{game_name}\"</b> has been added to your list."
 ADD_GAME_DUPLICATE = "Game [ <code>{game_id}</code> ] - <b>\"{game_name}\"</b> is already in your list."
@@ -22,7 +23,7 @@ ADD_GAME_INVALID = "Invalid game ID: [ <code>{game_id}</code> ]. {error_message}
 ADD_GAME_NO_WORKSHOP = "Game [ <code>{game_id}</code> ] - <b>\"{game_name}\"</b> exists but does not have a Steam Workshop."
 REMOVE_GAME_SUCCESS = "Game [ <code>{game_id}</code> ] - <b>\"{game_name}\"</b> has been removed from your list."
 REMOVE_GAME_NOT_FOUND = "Game [ <code>{game_id}</code> ] is not in your list."
-INVALID_ADD_FORMAT = "Invalid format. Use: <code>add GAME_ID</code>"
+INVALID_ADD_FORMAT = "Invalid format. Use: <code>add GAME_ID</code> or <code>add URL</code>"
 INVALID_REMOVE_FORMAT = "Invalid format. Use: <code>rm GAME_ID</code>"
 
 config = configparser.ConfigParser()
@@ -115,6 +116,17 @@ async def delete_last_message(user_id, command, client, chat_id):
             pass
 
 
+def extract_game_id(input_str):
+    if input_str.isdigit():
+        return input_str
+    pattern = r"^https?://store\.steampowered\.com/app/(\d+)/"
+    match = re.match(pattern, input_str)
+    if match:
+        return match.group(1)
+    else:
+        return None
+
+
 @app.on_message(filters.private & filters.command("start"))
 async def start(client, message):
     await message.delete()
@@ -144,41 +156,45 @@ async def manage_games(client, message):
     last_messages[message.from_user.id]["set"] = sent_message.id
 
 
-@app.on_message(filters.private & filters.regex(r"(?i)^add\s\d+$"))
+@app.on_message(filters.private & filters.regex(r"(?i)^add\s+"))
 async def add_game(client, message):
     global steam_games
     await message.delete()
-    parts = message.text.split(maxsplit=1)
+    parts = message.text.strip().split(maxsplit=1)
     if len(parts) != 2:
         response_text = INVALID_ADD_FORMAT
     else:
-        game_id = parts[1]
-        is_valid, game_name_or_error = is_valid_game(game_id)
-        if is_valid:
-            game_name = game_name_or_error
-            if game_id not in steam_games:
-                has_workshop = check_workshop(game_id)
-                if has_workshop is True:
-                    steam_games[game_id] = game_name
-                    save_games()
-                    response_text = ADD_GAME_SUCCESS.format(
-                        game_id=game_id, game_name=game_name
-                    )
-                elif has_workshop is False:
-                    response_text = ADD_GAME_NO_WORKSHOP.format(
-                        game_id=game_id, game_name=game_name
-                    )
+        input_str = parts[1]
+        game_id = extract_game_id(input_str)
+        if game_id:
+            is_valid, game_name_or_error = is_valid_game(game_id)
+            if is_valid:
+                game_name = game_name_or_error
+                if game_id not in steam_games:
+                    has_workshop = check_workshop(game_id)
+                    if has_workshop is True:
+                        steam_games[game_id] = game_name
+                        save_games()
+                        response_text = ADD_GAME_SUCCESS.format(
+                            game_id=game_id, game_name=game_name
+                        )
+                    elif has_workshop is False:
+                        response_text = ADD_GAME_NO_WORKSHOP.format(
+                            game_id=game_id, game_name=game_name
+                        )
+                    else:
+                        response_text = "Could not check if the game has a Steam Workshop."
                 else:
-                    response_text = "Could not check if the game has a Steam Workshop."
+                    response_text = ADD_GAME_DUPLICATE.format(
+                        game_id=game_id, game_name=steam_games[game_id]
+                    )
             else:
-                response_text = ADD_GAME_DUPLICATE.format(
-                    game_id=game_id, game_name=steam_games[game_id]
+                error_message = game_name_or_error
+                response_text = ADD_GAME_INVALID.format(
+                    game_id=game_id, error_message=error_message
                 )
         else:
-            error_message = game_name_or_error
-            response_text = ADD_GAME_INVALID.format(
-                game_id=game_id, error_message=error_message
-            )
+            response_text = INVALID_ADD_FORMAT
     await delete_last_message(message.from_user.id, "set", client, message.chat.id)
     game_list = "\n".join(
         [f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]
@@ -194,7 +210,7 @@ async def add_game(client, message):
 async def remove_game(client, message):
     global steam_games
     await message.delete()
-    parts = message.text.split()
+    parts = message.text.strip().split()
     if len(parts) != 2:
         response_text = INVALID_REMOVE_FORMAT
     else:
