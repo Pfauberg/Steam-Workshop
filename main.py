@@ -144,7 +144,7 @@ async def manage_games(client, message):
     last_messages[message.from_user.id]["set"] = sent_message.id
 
 
-@app.on_message(filters.private & filters.regex(r"^add\s\d+$"))
+@app.on_message(filters.private & filters.regex(r"(?i)^add\s\d+$"))
 async def add_game(client, message):
     global steam_games
     await message.delete()
@@ -190,7 +190,7 @@ async def add_game(client, message):
     last_messages[message.from_user.id]["set"] = sent_message.id
 
 
-@app.on_message(filters.private & filters.regex(r"^rm\s\d+$"))
+@app.on_message(filters.private & filters.regex(r"(?i)^rm\s\d+$"))
 async def remove_game(client, message):
     global steam_games
     await message.delete()
