@@ -25,6 +25,7 @@ REMOVE_GAME_SUCCESS = "Game [ <code>{game_id}</code> ] - <b>\"{game_name}\"</b> 
 REMOVE_GAME_NOT_FOUND = "Game [ <code>{game_id}</code> ] is not in your list."
 INVALID_ADD_FORMAT = "Invalid format. Use: <code>add GAME_ID</code> or <code>add URL</code>"
 INVALID_REMOVE_FORMAT = "Invalid format. Use: <code>rm GAME_ID</code>"
+WORKSHOP_CHECK_FAILED = "Could not check if the game has a Steam Workshop."
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -183,7 +184,7 @@ async def add_game(client, message):
                             game_id=game_id, game_name=game_name
                         )
                     else:
-                        response_text = "Could not check if the game has a Steam Workshop."
+                        response_text = WORKSHOP_CHECK_FAILED
                 else:
                     response_text = ADD_GAME_DUPLICATE.format(
                         game_id=game_id, game_name=steam_games[game_id]
