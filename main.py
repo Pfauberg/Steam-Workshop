@@ -1,3 +1,4 @@
+import os
 import configparser
 import asyncio
 import json
@@ -37,26 +38,34 @@ bot_token = config['telegram']['BOT_TOKEN'].strip('"')
 app = Client("my_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
 
 last_messages = {}
-steam_games = {}
 
-GAMES_FILE = "steam_games.json"
+USER_GAMES_FOLDER = "user_games"
+
+if not os.path.exists(USER_GAMES_FOLDER):
+    os.makedirs(USER_GAMES_FOLDER)
 
 
-def load_games():
-    global steam_games
+def get_user_games_file(user_id):
+    return os.path.join(USER_GAMES_FOLDER, f"games_{user_id}.json")
+
+
+def load_games(user_id):
+    games_file = get_user_games_file(user_id)
     try:
-        with open(GAMES_FILE, "r") as file:
-            steam_games = json.load(file)
+        with open(games_file, "r") as file:
+            games = json.load(file)
     except:
-        steam_games = {}
+        games = {}
+    return games
 
 
-def save_games():
+def save_games(user_id, games):
+    games_file = get_user_games_file(user_id)
     try:
-        with open(GAMES_FILE, "w") as file:
-            json.dump(steam_games, file)
-    except:
-        pass
+        with open(games_file, "w") as file:
+            json.dump(games, file)
+    except Exception as e:
+        print(f"Error saving games for user {user_id}: {e}")
 
 
 def is_valid_game(game_id):
@@ -131,36 +140,40 @@ def extract_game_id(input_str):
 @app.on_message(filters.private & filters.command("start"))
 async def start(client, message):
     await message.delete()
-    await delete_last_message(message.from_user.id, "start", client, message.chat.id)
+    user_id = message.from_user.id
+    await delete_last_message(user_id, "start", client, message.chat.id)
     commands = [BotCommand(cmd["command"], cmd["description"]) for cmd in COMMANDS_DESCRIPTION]
     await client.set_bot_commands(commands)
     text = WELCOME_TEXT
     for cmd in commands:
         text += f"\n<blockquote>/{cmd.command} - {cmd.description}</blockquote>"
     sent_message = await message.reply(text, parse_mode=ParseMode.HTML)
-    if message.from_user.id not in last_messages:
-        last_messages[message.from_user.id] = {}
-    last_messages[message.from_user.id]["start"] = sent_message.id
+    if user_id not in last_messages:
+        last_messages[user_id] = {}
+    last_messages[user_id]["start"] = sent_message.id
 
 
 @app.on_message(filters.private & filters.command("set"))
 async def manage_games(client, message):
     await message.delete()
-    await delete_last_message(message.from_user.id, "set", client, message.chat.id)
+    user_id = message.from_user.id
+    await delete_last_message(user_id, "set", client, message.chat.id)
+    steam_games = load_games(user_id)
     game_list = "\n".join(
         [f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]
     ) or GAME_LIST_EMPTY
     text = f"{GAME_LIST_HEADER}\n{game_list}\n\n{ADD_GAME_USAGE}\n{REMOVE_GAME_USAGE}"
     sent_message = await message.reply(text, parse_mode=ParseMode.HTML)
-    if message.from_user.id not in last_messages:
-        last_messages[message.from_user.id] = {}
-    last_messages[message.from_user.id]["set"] = sent_message.id
+    if user_id not in last_messages:
+        last_messages[user_id] = {}
+    last_messages[user_id]["set"] = sent_message.id
 
 
 @app.on_message(filters.private & filters.regex(r"(?i)^add\s+"))
 async def add_game(client, message):
-    global steam_games
     await message.delete()
+    user_id = message.from_user.id
+    steam_games = load_games(user_id)
     parts = message.text.strip().split(maxsplit=1)
     if len(parts) != 2:
         response_text = INVALID_ADD_FORMAT
@@ -175,7 +188,7 @@ async def add_game(client, message):
                     has_workshop = check_workshop(game_id)
                     if has_workshop is True:
                         steam_games[game_id] = game_name
-                        save_games()
+                        save_games(user_id, steam_games)
                         response_text = ADD_GAME_SUCCESS.format(
                             game_id=game_id, game_name=game_name
                         )
@@ -196,21 +209,22 @@ async def add_game(client, message):
                 )
         else:
             response_text = INVALID_ADD_FORMAT
-    await delete_last_message(message.from_user.id, "set", client, message.chat.id)
+    await delete_last_message(user_id, "set", client, message.chat.id)
     game_list = "\n".join(
         [f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]
     ) or GAME_LIST_EMPTY
     text = f"{GAME_LIST_HEADER}\n{game_list}\n\n{ADD_GAME_USAGE}\n{REMOVE_GAME_USAGE}"
     sent_message = await message.reply(f"{response_text}\n\n{text}", parse_mode=ParseMode.HTML)
-    if message.from_user.id not in last_messages:
-        last_messages[message.from_user.id] = {}
-    last_messages[message.from_user.id]["set"] = sent_message.id
+    if user_id not in last_messages:
+        last_messages[user_id] = {}
+    last_messages[user_id]["set"] = sent_message.id
 
 
 @app.on_message(filters.private & filters.regex(r"(?i)^rm\s\d+$"))
 async def remove_game(client, message):
-    global steam_games
     await message.delete()
+    user_id = message.from_user.id
+    steam_games = load_games(user_id)
     parts = message.text.strip().split()
     if len(parts) != 2:
         response_text = INVALID_REMOVE_FORMAT
@@ -218,21 +232,21 @@ async def remove_game(client, message):
         game_id = parts[1]
         if game_id in steam_games:
             removed_game = steam_games.pop(game_id)
-            save_games()
+            save_games(user_id, steam_games)
             response_text = REMOVE_GAME_SUCCESS.format(
                 game_id=game_id, game_name=removed_game
             )
         else:
             response_text = REMOVE_GAME_NOT_FOUND.format(game_id=game_id)
-    await delete_last_message(message.from_user.id, "set", client, message.chat.id)
+    await delete_last_message(user_id, "set", client, message.chat.id)
     game_list = "\n".join(
         [f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]
     ) or GAME_LIST_EMPTY
     text = f"{GAME_LIST_HEADER}\n{game_list}\n\n{ADD_GAME_USAGE}\n{REMOVE_GAME_USAGE}"
     sent_message = await message.reply(f"{response_text}\n\n{text}", parse_mode=ParseMode.HTML)
-    if message.from_user.id not in last_messages:
-        last_messages[message.from_user.id] = {}
-    last_messages[message.from_user.id]["set"] = sent_message.id
+    if user_id not in last_messages:
+        last_messages[user_id] = {}
+    last_messages[user_id]["set"] = sent_message.id
 
 
 @app.on_message(filters.private & filters.incoming)
@@ -241,5 +255,4 @@ async def delete_user_messages(client, message):
 
 
 if __name__ == "__main__":
-    load_games()
     app.run()
