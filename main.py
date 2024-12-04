@@ -4,7 +4,6 @@ import asyncio
 import json
 import requests
 import re
-from bs4 import BeautifulSoup
 from pyrogram import Client, filters
 from pyrogram.types import BotCommand
 from pyrogram.enums import ParseMode
@@ -34,6 +33,7 @@ config.read('config.ini')
 api_id = int(config['telegram']['API_ID'].strip('"'))
 api_hash = config['telegram']['API_HASH'].strip('"')
 bot_token = config['telegram']['BOT_TOKEN'].strip('"')
+steam_api_key = config["steam"]["STEAM_API_KEY"].strip('"')
 
 app = Client("my_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
 
@@ -88,31 +88,22 @@ def is_valid_game(game_id):
         return False, "Exception occurred during game validation."
 
 
-def check_workshop(app_id):
-    workshop_url = f"https://steamcommunity.com/app/{app_id}/workshop/"
-
+def check_workshop_exists(app_id, api_key):
+    url = "https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/"
+    params = {
+        "key": api_key,
+        "appid": app_id,
+        "query_type": 0,
+        "numperpage": 1,
+    }
     try:
-        response = requests.get(workshop_url, headers={"User-Agent": "Mozilla/5.0"})
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-
-            page_title = soup.find('div', {'class': 'apphub_HeaderTop'})
-            if page_title and "Workshop" in page_title.get_text():
-                return True
-
-            empty_notice = soup.find('div', {'class': 'noItemsNotice'})
-            if empty_notice:
-                return False
-
-            popular_items_header = soup.find('div', {'class': 'workshopBrowseHeader'})
-            if popular_items_header:
-                return True
-
-            return False
-        elif response.status_code == 404:
-            return False
-        else:
-            return None
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+        total_items = data.get("response", {}).get("total", 0)
+        if total_items > 0:
+            return True
+        return False
     except requests.exceptions.RequestException:
         return None
 
@@ -185,7 +176,7 @@ async def add_game(client, message):
             if is_valid:
                 game_name = game_name_or_error
                 if game_id not in steam_games:
-                    has_workshop = check_workshop(game_id)
+                    has_workshop = check_workshop_exists(game_id, steam_api_key)
                     if has_workshop is True:
                         steam_games[game_id] = game_name
                         save_games(user_id, steam_games)
