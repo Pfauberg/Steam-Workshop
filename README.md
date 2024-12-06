@@ -6,14 +6,15 @@ A Telegram bot that delivers real-time updates about mods in the Steam Workshop 
 ## Current Features
 - **File: `main.py`**
   - `/start`: Displays the command menu.
-  - `/set`: Allows users to configure which games to monitor for mod updates.
-- **File: `final_workshop_script.py`**
-  - Retrieves the latest updated Workshop items for a specific game using its Steam App ID.
-  - Fetches detailed information about each Workshop item.
+  - `/set`: Allows users to manage their list of games for monitoring mod updates.
+    - Add games using `add GAME_ID` or `add URL`.
+    - Remove games using `rm GAME_ID`.
+    - View the current list of monitored games.
+  - `/run`: Starts monitoring Steam Workshop updates for the games configured via `/set`.
+  - `/stop`: Stops the monitoring process.
+  - Automatically deletes incoming user messages to maintain a clean chat interface.
 
 ## Future Features
-- **Commands to be added by integrating `final_workshop_script.py` into `main.py`:**  
-  - `/run`: Start monitoring Steam Workshop updates for games configured via `/set`.  
-  - `/stop`: Stop the monitoring process.  
-- Like/Dislike system for mods to manage a favorites list and a blacklist.  
-- Advanced filters in `/set` to customize updates based on specific criteria (e.g., mod tags, update frequency, etc.).
+- **Message Styling:** Improve the visual appearance of mod update messages for better readability and presentation.
+- **Like/Dislike System:** React to mods with likes or dislikes to manage a favorites list or blacklist.
+- **Advanced Filters:** Customize `/set` to filter updates based on specific mod characteristics, such as tags or update frequency.
