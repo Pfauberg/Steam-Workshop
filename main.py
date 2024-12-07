@@ -9,13 +9,35 @@ from pyrogram.types import BotCommand
 from pyrogram.enums import ParseMode
 from datetime import datetime
 
-WELCOME_TEXT = "<b>Welcome! Available commands:</b>"
+WELCOME_MESSAGE = (
+    "<b>Welcome to the <a href=\"https://t.me/steam_workshop_infobot\">Steam Workshop</a> bot!</b>\n"
+    "<blockquote>It tracks updates and new items in Steam Workshop for your selected games.</blockquote>\n"
+    "If you want to continue,\n\n"
+    "<b>click: /set /set /set</b>\n"
+)
+
+WORKSHOP_ITEM_MESSAGE = (
+    "<b>Game Name:</b> {game_name}\n"
+    "<b>Title:</b> {title}\n"
+    "<b>File Size:</b> {file_size} bytes\n"
+    "<b>Time Created:</b> {time_created}\n"
+    "<b>Time Updated:</b> {time_updated}\n"
+    "<b>Subscriptions:</b> {subscriptions}\n"
+    "<b>Favorited:</b> {favorited}\n"
+    "<b>Total Subscriptions:</b> {lifetime_subscriptions}\n"
+    "<b>Total Favorited:</b> {lifetime_favorited}\n"
+    "<b>Views:</b> {views}\n"
+    "<b>Tags:</b> {tags}\n"
+    "<b>Workshop URL:</b> <a href=\"{item_url}\">View Item</a>"
+)
+
 COMMANDS_DESCRIPTION = [
     {"command": "start", "description": "Bot's main menu"},
     {"command": "set", "description": "Manage your games list"},
     {"command": "run", "description": "Start monitoring workshops"},
-    {"command": "stop", "description": "Stop monitoring workshops"},
+    {"command": "stop", "description": "Stop monitoring workshops"}
 ]
+
 GAME_LIST_HEADER = "<b>Steam games list:</b>"
 GAME_LIST_EMPTY = "No games added yet."
 ADD_GAME_USAGE = "To add a game, use: <code>add GAME_ID</code> or <code>add URL</code>"
@@ -173,10 +195,7 @@ async def start(client, message):
     await delete_last_message(user_id, "start", client, message.chat.id)
     commands = [BotCommand(cmd["command"], cmd["description"]) for cmd in COMMANDS_DESCRIPTION]
     await client.set_bot_commands(commands)
-    text = WELCOME_TEXT
-    for cmd in commands:
-        text += f"\n<blockquote>/{cmd.command} - {cmd.description}</blockquote>"
-    sent_message = await message.reply(text, parse_mode=ParseMode.HTML)
+    sent_message = await message.reply(WELCOME_MESSAGE, parse_mode=ParseMode.HTML)
     if user_id not in last_messages:
         last_messages[user_id] = {}
     last_messages[user_id]["start"] = sent_message.id
@@ -388,30 +407,32 @@ async def process_and_send_item(known_items, user_id, game_id, game_name, item, 
 
 async def send_workshop_item(client, user_id, game_name, item):
     title = item.get('title', 'No Title')
-    file_id = item.get('publishedfileid')
-    time_updated = int(item.get('time_updated', 0))
-    readable_time = datetime.utcfromtimestamp(time_updated).strftime('%Y-%m-%d %H:%M:%S')
-    item_url = f"https://steamcommunity.com/sharedfiles/filedetails/?id={file_id}"
-    views = item.get('views', 0)
+    file_size = item.get('file_size', 'N/A')
+    time_created = datetime.utcfromtimestamp(item.get('time_created', 0)).strftime('%Y-%m-%d %H:%M:%S') if item.get("time_created") else 'N/A'
+    time_updated = datetime.utcfromtimestamp(item.get('time_updated', 0)).strftime('%Y-%m-%d %H:%M:%S') if item.get("time_updated") else 'N/A'
     subscriptions = item.get('subscriptions', 0)
     favorited = item.get('favorited', 0)
     lifetime_subscriptions = item.get('lifetime_subscriptions', 0)
     lifetime_favorited = item.get('lifetime_favorited', 0)
-    file_size = item.get('file_size', 0)
-    tags = [tag.get('tag', '') for tag in item.get('tags', [])]
-    message_text = (
-        f"<b>Game:</b> {game_name}\n"
-        f"<b>Title:</b> {title}\n"
-        f"<b>Updated:</b> {readable_time}\n"
-        f"<b>Views:</b> {views}\n"
-        f"<b>Subscriptions:</b> {subscriptions}\n"
-        f"<b>Favorited:</b> {favorited}\n"
-        f"<b>Total Subscriptions:</b> {lifetime_subscriptions}\n"
-        f"<b>Total Favorited:</b> {lifetime_favorited}\n"
-        f"<b>File Size:</b> {file_size} bytes\n"
-        f"<b>Tags:</b> {', '.join(tags)}\n"
-        f"<b>URL:</b> {item_url}"
+    views = item.get('views', 0)
+    tags = ', '.join([tag.get('tag', '') for tag in item.get('tags', [])]) if item.get('tags') else 'N/A'
+    item_url = f"https://steamcommunity.com/sharedfiles/filedetails/?id={item.get('publishedfileid', 'N/A')}"
+
+    message_text = WORKSHOP_ITEM_MESSAGE.format(
+        game_name=game_name,
+        title=title,
+        file_size=file_size,
+        time_created=time_created,
+        time_updated=time_updated,
+        subscriptions=subscriptions,
+        favorited=favorited,
+        lifetime_subscriptions=lifetime_subscriptions,
+        lifetime_favorited=lifetime_favorited,
+        views=views,
+        tags=tags,
+        item_url=item_url
     )
+
     await client.send_message(chat_id=user_id, text=message_text, parse_mode=ParseMode.HTML)
 
 
