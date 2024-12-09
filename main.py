@@ -17,18 +17,13 @@ WELCOME_MESSAGE = (
 )
 
 WORKSHOP_ITEM_MESSAGE = (
-    "<b>Game Name:</b> {game_name}\n"
-    "<b>Title:</b> {title}\n"
-    "<b>File Size:</b> {file_size} bytes\n"
-    "<b>Time Created:</b> {time_created}\n"
-    "<b>Time Updated:</b> {time_updated}\n"
-    "<b>Subscriptions:</b> {subscriptions}\n"
-    "<b>Favorited:</b> {favorited}\n"
-    "<b>Total Subscriptions:</b> {lifetime_subscriptions}\n"
-    "<b>Total Favorited:</b> {lifetime_favorited}\n"
-    "<b>Views:</b> {views}\n"
-    "<b>Tags:</b> {tags}\n"
-    "<b>Workshop URL:</b> <a href=\"{item_url}\">View Item</a>"
+    "<b>[ {game_name} ] – {title}</b>\n\n"
+    "<b>💾 Size:</b> {file_size}\n\n"
+    "<b>👁️ Views:</b> {views}\n"
+    "<b>📥 Subscriptions:</b> {subscriptions} ({lifetime_subscriptions})\n"
+    "<b>⭐ Favorited:</b> {favorited} ({lifetime_favorited})\n\n"
+    "<b>🏷️ Tags:</b> {tags}\n\n"
+    "<b>🔗 [ <a href=\"{item_url}\">View Item</a> ]</b>"
 )
 
 COMMANDS_DESCRIPTION = [
@@ -407,9 +402,17 @@ async def process_and_send_item(known_items, user_id, game_id, game_name, item, 
 
 async def send_workshop_item(client, user_id, game_name, item):
     title = item.get('title', 'No Title')
-    file_size = item.get('file_size', 'N/A')
-    time_created = datetime.utcfromtimestamp(item.get('time_created', 0)).strftime('%Y-%m-%d %H:%M:%S') if item.get("time_created") else 'N/A'
-    time_updated = datetime.utcfromtimestamp(item.get('time_updated', 0)).strftime('%Y-%m-%d %H:%M:%S') if item.get("time_updated") else 'N/A'
+    file_size_bytes = int(item.get('file_size', 0))
+    file_size = "N/A"
+
+    if file_size_bytes > 0:
+        if file_size_bytes >= 1_073_741_824:
+            file_size = f"{file_size_bytes / 1_073_741_824:.2f} GB"
+        elif file_size_bytes >= 1_048_576:
+            file_size = f"{file_size_bytes / 1_048_576:.2f} MB"
+        else:
+            file_size = f"{file_size_bytes / 1024:.2f} KB"
+
     subscriptions = item.get('subscriptions', 0)
     favorited = item.get('favorited', 0)
     lifetime_subscriptions = item.get('lifetime_subscriptions', 0)
@@ -422,8 +425,6 @@ async def send_workshop_item(client, user_id, game_name, item):
         game_name=game_name,
         title=title,
         file_size=file_size,
-        time_created=time_created,
-        time_updated=time_updated,
         subscriptions=subscriptions,
         favorited=favorited,
         lifetime_subscriptions=lifetime_subscriptions,
