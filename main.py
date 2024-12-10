@@ -7,7 +7,7 @@ import re
 from pyrogram import Client, filters
 from pyrogram.types import BotCommand
 from pyrogram.enums import ParseMode
-from datetime import datetime
+
 
 WELCOME_MESSAGE = (
     "<b>Welcome to the <a href=\"https://t.me/steam_workshop_infobot\">Steam Workshop</a> bot!</b>\n"
@@ -37,6 +37,8 @@ GAME_LIST_HEADER = "<b>Steam games list:</b>"
 GAME_LIST_EMPTY = "No games added yet."
 ADD_GAME_USAGE = "To add a game, use: <code>add GAME_ID</code> or <code>add URL</code>"
 REMOVE_GAME_USAGE = "To remove a game, use: <code>rm GAME_ID</code>"
+SET_MENU_FOOTER = "To start monitoring: /run"
+
 ADD_GAME_SUCCESS = "Game [ <code>{game_id}</code> ] - <b>\"{game_name}\"</b> has been added to your list."
 ADD_GAME_DUPLICATE = "Game [ <code>{game_id}</code> ] - <b>\"{game_name}\"</b> is already in your list."
 ADD_GAME_INVALID = "Invalid game ID: [ <code>{game_id}</code> ]. {error_message}"
@@ -46,12 +48,22 @@ REMOVE_GAME_NOT_FOUND = "Game [ <code>{game_id}</code> ] is not in your list."
 INVALID_ADD_FORMAT = "Invalid format. Use: <code>add GAME_ID</code> or <code>add URL</code>"
 INVALID_REMOVE_FORMAT = "Invalid format. Use: <code>rm GAME_ID</code>"
 WORKSHOP_CHECK_FAILED = "Could not check if the game has a Steam Workshop."
+
+SET_MENU_TEMPLATE = (
+    "{game_list_header}\n"
+    "{game_list}\n\n"
+    "{add_game_usage}\n"
+    "{remove_game_usage}\n\n"
+    "{footer}"
+)
+
 MONITORING_STARTED = "Monitoring started."
 MONITORING_ALREADY_RUNNING = "Monitoring is already running."
 MONITORING_NO_GAMES = "You have no games added for monitoring."
 MONITORING_STOPPED = "Monitoring stopped."
 MONITORING_NOT_RUNNING = "Monitoring is not running."
-SET_DISABLED_DURING_MONITORING = "You cannot use /set while monitoring is running. Please stop monitoring first."
+SET_DISABLED_DURING_MONITORING = "You cannot use /set while monitoring is running. Please stop monitoring first: <b>[ /stop ]</b>"
+
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -203,13 +215,22 @@ async def manage_games(client, message):
     if user_id in monitoring_users:
         await message.reply(SET_DISABLED_DURING_MONITORING, parse_mode=ParseMode.HTML)
         return
+
     await delete_last_message(user_id, "set", client, message.chat.id)
     steam_games = load_games(user_id)
     game_list = "\n".join(
         [f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]
     ) or GAME_LIST_EMPTY
-    text = f"{GAME_LIST_HEADER}\n{game_list}\n\n{ADD_GAME_USAGE}\n{REMOVE_GAME_USAGE}"
-    sent_message = await message.reply(text, parse_mode=ParseMode.HTML)
+
+    menu_text = SET_MENU_TEMPLATE.format(
+        game_list_header=GAME_LIST_HEADER,
+        game_list=game_list,
+        add_game_usage=ADD_GAME_USAGE,
+        remove_game_usage=REMOVE_GAME_USAGE,
+        footer=SET_MENU_FOOTER
+    )
+
+    sent_message = await message.reply(menu_text, parse_mode=ParseMode.HTML)
     if user_id not in last_messages:
         last_messages[user_id] = {}
     last_messages[user_id]["set"] = sent_message.id
@@ -258,12 +279,21 @@ async def add_game(client, message):
                 )
         else:
             response_text = INVALID_ADD_FORMAT
+
     await delete_last_message(user_id, "set", client, message.chat.id)
     game_list = "\n".join(
-        [f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]
+        [f"[ <code>{g_id}</code> ] - {g_name}" for g_id, g_name in steam_games.items()]
     ) or GAME_LIST_EMPTY
-    text = f"{GAME_LIST_HEADER}\n{game_list}\n\n{ADD_GAME_USAGE}\n{REMOVE_GAME_USAGE}"
-    sent_message = await message.reply(f"{response_text}\n\n{text}", parse_mode=ParseMode.HTML)
+
+    menu_text = SET_MENU_TEMPLATE.format(
+        game_list_header=GAME_LIST_HEADER,
+        game_list=game_list,
+        add_game_usage=ADD_GAME_USAGE,
+        remove_game_usage=REMOVE_GAME_USAGE,
+        footer=SET_MENU_FOOTER
+    )
+
+    sent_message = await message.reply(f"{response_text}\n\n{menu_text}", parse_mode=ParseMode.HTML)
     if user_id not in last_messages:
         last_messages[user_id] = {}
     last_messages[user_id]["set"] = sent_message.id
@@ -292,10 +322,18 @@ async def remove_game(client, message):
             response_text = REMOVE_GAME_NOT_FOUND.format(game_id=game_id)
     await delete_last_message(user_id, "set", client, message.chat.id)
     game_list = "\n".join(
-        [f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]
+        [f"[ <code>{g_id}</code> ] - {g_name}" for g_id, g_name in steam_games.items()]
     ) or GAME_LIST_EMPTY
-    text = f"{GAME_LIST_HEADER}\n{game_list}\n\n{ADD_GAME_USAGE}\n{REMOVE_GAME_USAGE}"
-    sent_message = await message.reply(f"{response_text}\n\n{text}", parse_mode=ParseMode.HTML)
+
+    menu_text = SET_MENU_TEMPLATE.format(
+        game_list_header=GAME_LIST_HEADER,
+        game_list=game_list,
+        add_game_usage=ADD_GAME_USAGE,
+        remove_game_usage=REMOVE_GAME_USAGE,
+        footer=SET_MENU_FOOTER
+    )
+
+    sent_message = await message.reply(f"{response_text}\n\n{menu_text}", parse_mode=ParseMode.HTML)
     if user_id not in last_messages:
         last_messages[user_id] = {}
     last_messages[user_id]["set"] = sent_message.id
@@ -330,17 +368,20 @@ async def monitor_workshops(client, user_id):
                 known_items = load_game_items_info(user_id, game_id)
                 if not first_run and new_items:
                     for item in new_items:
-                        await process_and_send_item(known_items, user_id, game_id, game_name, item, client, send_if_new_or_updated=True)
+                        await process_and_send_item(known_items, user_id, game_id, game_name, item, client,
+                                                    send_if_new_or_updated=True)
                     last_items[game_id] = new_items[0]['publishedfileid']
                     save_game_items_info(user_id, game_id, known_items)
                 elif first_run and new_items:
                     first = True
                     for item in new_items:
                         if first:
-                            await process_and_send_item(known_items, user_id, game_id, game_name, item, client, send_if_new_or_updated=True)
+                            await process_and_send_item(known_items, user_id, game_id, game_name, item, client,
+                                                        send_if_new_or_updated=True)
                             first = False
                         else:
-                            await process_and_send_item(known_items, user_id, game_id, game_name, item, client, send_if_new_or_updated=False)
+                            await process_and_send_item(known_items, user_id, game_id, game_name, item, client,
+                                                        send_if_new_or_updated=False)
                     last_items[game_id] = new_items[0]['publishedfileid']
                     save_game_items_info(user_id, game_id, known_items)
             await asyncio.sleep(10)
@@ -396,6 +437,13 @@ async def process_and_send_item(known_items, user_id, game_id, game_name, item, 
     old_time = known_items.get(publishedfileid, 0)
     if time_updated > old_time:
         known_items[publishedfileid] = time_updated
+        while len(known_items) > 1000:
+            oldest_item_id = min(known_items, key=known_items.get)
+            if oldest_item_id != publishedfileid:
+                del known_items[oldest_item_id]
+            else:
+                break
+        save_game_items_info(user_id, game_id, known_items)
         if send_if_new_or_updated:
             await send_workshop_item(client, user_id, game_name, item)
 
