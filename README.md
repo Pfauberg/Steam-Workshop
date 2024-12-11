@@ -1,20 +1,29 @@
-# Steam Workshop Telegram Bot
+### **Steam Workshop Telegram Bot**
 
-## Idea
-A Telegram bot that delivers real-time updates about mods in the Steam Workshop for selected games.
+---
 
-## Current Features
-- **File: `main.py`**
-  - `/start`: Displays the command menu.
-  - `/set`: Allows users to manage their list of games for monitoring mod updates.
-    - Add games using `add GAME_ID` or `add URL`.
-    - Remove games using `rm GAME_ID`.
-    - View the current list of monitored games.
-  - `/run`: Starts monitoring Steam Workshop updates for the games configured via `/set`.
-  - `/stop`: Stops the monitoring process.
-  - Automatically deletes incoming user messages to maintain a clean chat interface.
+## **Overview**
+A Telegram bot for monitoring updates in the Steam Workshop for selected games. Users receive notifications about new or updated Workshop items with detailed information.
 
-## Future Features
-- **Message Styling:** Improve the visual appearance of mod update messages for better readability and presentation.
-- **Like/Dislike System:** React to mods with likes or dislikes to manage a favorites list or blacklist.
-- **Advanced Filters:** Customize `/set` to filter updates based on specific mod characteristics, such as tags or update frequency.
+---
+
+## **Features**
+- **Workshop Monitoring:** Tracks updates for selected games and notifies users.
+- **User-Specific Storage:** Keeps game and item data separate for each user.
+- **Detailed Notifications:** Includes item title, file size, subscription counts, and tags.
+
+---
+
+## **Development Stage**
+### **Implemented:**
+- Real-time monitoring of Steam Workshop updates.
+- User-specific game and Workshop item storage.
+- Notifications with key item details.
+- Navigation buttons for easier menu interaction. (50%)
+
+### **Planned:**
+- Navigation buttons for easier menu interaction. (100%)
+- Filters for updates based on specific parameters.
+- Like/Dislike system for managing favorites and blacklist items.
+
+---

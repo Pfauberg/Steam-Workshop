@@ -5,39 +5,15 @@ import json
 import requests
 import re
 from pyrogram import Client, filters
-from pyrogram.types import BotCommand
+from pyrogram.types import BotCommand, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pyrogram.enums import ParseMode
 
-
-WELCOME_MESSAGE = (
-    "<b>Welcome to the <a href=\"https://t.me/steam_workshop_infobot\">Steam Workshop</a> bot!</b>\n"
-    "<blockquote>It tracks updates and new items in Steam Workshop for your selected games.</blockquote>\n"
-    "If you want to continue,\n\n"
-    "<b>click: /set /set /set</b>\n"
-)
-
-WORKSHOP_ITEM_MESSAGE = (
-    "<b>[ {game_name} ] – {title}</b>\n\n"
-    "<b>💾 Size:</b> {file_size}\n\n"
-    "<b>👁️ Views:</b> {views}\n"
-    "<b>📥 Subscriptions:</b> {subscriptions} ({lifetime_subscriptions})\n"
-    "<b>⭐ Favorited:</b> {favorited} ({lifetime_favorited})\n\n"
-    "<b>🏷️ Tags:</b> {tags}\n\n"
-    "<b>🔗 [ <a href=\"{item_url}\">View Item</a> ]</b>"
-)
-
-COMMANDS_DESCRIPTION = [
-    {"command": "start", "description": "Bot's main menu"},
-    {"command": "set", "description": "Manage your games list"},
-    {"command": "run", "description": "Start monitoring workshops"},
-    {"command": "stop", "description": "Stop monitoring workshops"}
-]
 
 GAME_LIST_HEADER = "<b>Steam games list:</b>"
 GAME_LIST_EMPTY = "No games added yet."
 ADD_GAME_USAGE = "To add a game, use: <code>add GAME_ID</code> or <code>add URL</code>"
 REMOVE_GAME_USAGE = "To remove a game, use: <code>rm GAME_ID</code>"
-SET_MENU_FOOTER = "To start monitoring: /run"
+SET_MENU_FOOTER = ""
 
 ADD_GAME_SUCCESS = "Game [ <code>{game_id}</code> ] - <b>\"{game_name}\"</b> has been added to your list."
 ADD_GAME_DUPLICATE = "Game [ <code>{game_id}</code> ] - <b>\"{game_name}\"</b> is already in your list."
@@ -49,6 +25,22 @@ INVALID_ADD_FORMAT = "Invalid format. Use: <code>add GAME_ID</code> or <code>add
 INVALID_REMOVE_FORMAT = "Invalid format. Use: <code>rm GAME_ID</code>"
 WORKSHOP_CHECK_FAILED = "Could not check if the game has a Steam Workshop."
 
+MONITORING_STARTED = "Monitoring started."
+MONITORING_ALREADY_RUNNING = "Monitoring is already running."
+MONITORING_NO_GAMES = "You have no games added for monitoring."
+MONITORING_STOPPED = "Monitoring stopped."
+MONITORING_NOT_RUNNING = "Monitoring is not running."
+SET_DISABLED_DURING_MONITORING = "You cannot modify the game list while monitoring is running."
+
+WORKSHOP_ITEM_MESSAGE = (
+    "<b>[ {game_name} ] – {title}</b>\n\n"
+    "<b>💾 Size:</b> {file_size}\n\n"
+    "<b>📥 Subscriptions:</b> {subscriptions} ({lifetime_subscriptions})\n"
+    "<b>⭐ Favorited:</b> {favorited} ({lifetime_favorited})\n\n"
+    "<b>🏷️ Tags:</b> {tags}\n\n"
+    "<b>🔗 [ <a href=\"{item_url}\">View Item</a> ]</b>"
+)
+
 SET_MENU_TEMPLATE = (
     "{game_list_header}\n"
     "{game_list}\n\n"
@@ -56,14 +48,6 @@ SET_MENU_TEMPLATE = (
     "{remove_game_usage}\n\n"
     "{footer}"
 )
-
-MONITORING_STARTED = "Monitoring started."
-MONITORING_ALREADY_RUNNING = "Monitoring is already running."
-MONITORING_NO_GAMES = "You have no games added for monitoring."
-MONITORING_STOPPED = "Monitoring stopped."
-MONITORING_NOT_RUNNING = "Monitoring is not running."
-SET_DISABLED_DURING_MONITORING = "You cannot use /set while monitoring is running. Please stop monitoring first: <b>[ /stop ]</b>"
-
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -79,7 +63,6 @@ last_messages = {}
 monitoring_users = {}
 
 USER_GAMES_FOLDER = "user_games"
-
 if not os.path.exists(USER_GAMES_FOLDER):
     os.makedirs(USER_GAMES_FOLDER)
 
@@ -114,8 +97,8 @@ def save_games(user_id, games):
     try:
         with open(games_file, "w") as file:
             json.dump(games, file)
-    except Exception as e:
-        print(f"Error saving games for user {user_id}: {e}")
+    except:
+        pass
 
 
 def load_game_items_info(user_id, game_id):
@@ -151,7 +134,7 @@ def is_valid_game(game_id):
                 return False, "Game ID not found."
         else:
             return False, f"HTTP Error {response.status_code}"
-    except Exception:
+    except:
         return False, "Exception occurred during game validation."
 
 
@@ -171,7 +154,7 @@ def check_workshop_exists(app_id, api_key):
         if total_items > 0:
             return True
         return False
-    except requests.exceptions.RequestException:
+    except:
         return None
 
 
@@ -195,54 +178,100 @@ def extract_game_id(input_str):
         return None
 
 
-@app.on_message(filters.private & filters.command("start"))
-async def start(client, message):
-    await message.delete()
-    user_id = message.from_user.id
-    await delete_last_message(user_id, "start", client, message.chat.id)
-    commands = [BotCommand(cmd["command"], cmd["description"]) for cmd in COMMANDS_DESCRIPTION]
-    await client.set_bot_commands(commands)
-    sent_message = await message.reply(WELCOME_MESSAGE, parse_mode=ParseMode.HTML)
-    if user_id not in last_messages:
-        last_messages[user_id] = {}
-    last_messages[user_id]["start"] = sent_message.id
-
-
-@app.on_message(filters.private & filters.command("set"))
-async def manage_games(client, message):
-    await message.delete()
-    user_id = message.from_user.id
-    if user_id in monitoring_users:
-        await message.reply(SET_DISABLED_DURING_MONITORING, parse_mode=ParseMode.HTML)
-        return
-
-    await delete_last_message(user_id, "set", client, message.chat.id)
+async def show_settings_menu(client, user_id, message=None, text_prefix=""):
     steam_games = load_games(user_id)
     game_list = "\n".join(
         [f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]
     ) or GAME_LIST_EMPTY
+
+    if user_id in monitoring_users:
+        footer = "Monitoring is running."
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop", callback_data="stop_monitoring")]])
+    else:
+        footer = "Press Run to start monitoring."
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Run", callback_data="run_monitoring")]])
 
     menu_text = SET_MENU_TEMPLATE.format(
         game_list_header=GAME_LIST_HEADER,
         game_list=game_list,
         add_game_usage=ADD_GAME_USAGE,
         remove_game_usage=REMOVE_GAME_USAGE,
-        footer=SET_MENU_FOOTER
+        footer=footer
     )
 
-    sent_message = await message.reply(menu_text, parse_mode=ParseMode.HTML)
+    full_text = f"{text_prefix}{menu_text}".strip()
+    if message:
+        await delete_last_message(user_id, "settings", client, message.chat.id)
+        sent_message = await message.reply(full_text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+    else:
+        chat_id = user_id
+        await delete_last_message(user_id, "settings", client, chat_id)
+        sent_message = await client.send_message(chat_id, full_text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+
     if user_id not in last_messages:
         last_messages[user_id] = {}
-    last_messages[user_id]["set"] = sent_message.id
+    last_messages[user_id]["settings"] = sent_message.id
+
+
+@app.on_message(filters.private & filters.command("start"))
+async def start(client, message):
+    await message.delete()
+    user_id = message.from_user.id
+    commands = [
+        BotCommand("start", "❗️ M E N U ❗️")
+    ]
+    await client.set_bot_commands(commands)
+    await show_settings_menu(client, user_id, message)
+
+
+@app.on_callback_query(filters.regex("^run_monitoring$"))
+async def run_monitoring_callback(client, callback_query: CallbackQuery):
+    user_id = callback_query.from_user.id
+    if user_id in monitoring_users:
+        await callback_query.answer(MONITORING_ALREADY_RUNNING, show_alert=True)
+        return
+    steam_games = load_games(user_id)
+    if not steam_games:
+        await callback_query.answer(MONITORING_NO_GAMES, show_alert=True)
+        return
+    monitoring_users[user_id] = {
+        "task": asyncio.create_task(monitor_workshops(client, user_id)),
+        "last_items": {}
+    }
+    await callback_query.answer(MONITORING_STARTED, show_alert=True)
+    game_list = '\n'.join(
+        [f'[ <code>{g_id}</code> ] - {g_name}' for g_id, g_name in steam_games.items()]) or GAME_LIST_EMPTY
+
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop", callback_data="stop_monitoring")]])
+    await callback_query.message.edit_text(
+        text=f"{GAME_LIST_HEADER}\n{game_list}\n\n"
+             f"{ADD_GAME_USAGE}\n{REMOVE_GAME_USAGE}\n\n"
+             "Monitoring is running.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard
+    )
+
+
+@app.on_callback_query(filters.regex("^stop_monitoring$"))
+async def stop_monitoring_callback(client, callback_query: CallbackQuery):
+    user_id = callback_query.from_user.id
+    if user_id not in monitoring_users:
+        await callback_query.answer(MONITORING_NOT_RUNNING, show_alert=True)
+        return
+    monitoring_users[user_id]["task"].cancel()
+    del monitoring_users[user_id]
+    await callback_query.answer(MONITORING_STOPPED, show_alert=True)
+    await show_settings_menu(client, user_id)
 
 
 @app.on_message(filters.private & filters.regex(r"(?i)^add\s+"))
 async def add_game(client, message):
-    await message.delete()
     user_id = message.from_user.id
     if user_id in monitoring_users:
+        await message.delete()
         await message.reply(SET_DISABLED_DURING_MONITORING, parse_mode=ParseMode.HTML)
         return
+    await message.delete()
     steam_games = load_games(user_id)
     parts = message.text.strip().split(maxsplit=1)
     if len(parts) != 2:
@@ -279,33 +308,17 @@ async def add_game(client, message):
                 )
         else:
             response_text = INVALID_ADD_FORMAT
-
-    await delete_last_message(user_id, "set", client, message.chat.id)
-    game_list = "\n".join(
-        [f"[ <code>{g_id}</code> ] - {g_name}" for g_id, g_name in steam_games.items()]
-    ) or GAME_LIST_EMPTY
-
-    menu_text = SET_MENU_TEMPLATE.format(
-        game_list_header=GAME_LIST_HEADER,
-        game_list=game_list,
-        add_game_usage=ADD_GAME_USAGE,
-        remove_game_usage=REMOVE_GAME_USAGE,
-        footer=SET_MENU_FOOTER
-    )
-
-    sent_message = await message.reply(f"{response_text}\n\n{menu_text}", parse_mode=ParseMode.HTML)
-    if user_id not in last_messages:
-        last_messages[user_id] = {}
-    last_messages[user_id]["set"] = sent_message.id
+    await show_settings_menu(client, user_id, message, text_prefix=response_text + "\n\n")
 
 
 @app.on_message(filters.private & filters.regex(r"(?i)^rm\s\d+$"))
 async def remove_game(client, message):
-    await message.delete()
     user_id = message.from_user.id
     if user_id in monitoring_users:
+        await message.delete()
         await message.reply(SET_DISABLED_DURING_MONITORING, parse_mode=ParseMode.HTML)
         return
+    await message.delete()
     steam_games = load_games(user_id)
     parts = message.text.strip().split()
     if len(parts) != 2:
@@ -320,41 +333,7 @@ async def remove_game(client, message):
             )
         else:
             response_text = REMOVE_GAME_NOT_FOUND.format(game_id=game_id)
-    await delete_last_message(user_id, "set", client, message.chat.id)
-    game_list = "\n".join(
-        [f"[ <code>{g_id}</code> ] - {g_name}" for g_id, g_name in steam_games.items()]
-    ) or GAME_LIST_EMPTY
-
-    menu_text = SET_MENU_TEMPLATE.format(
-        game_list_header=GAME_LIST_HEADER,
-        game_list=game_list,
-        add_game_usage=ADD_GAME_USAGE,
-        remove_game_usage=REMOVE_GAME_USAGE,
-        footer=SET_MENU_FOOTER
-    )
-
-    sent_message = await message.reply(f"{response_text}\n\n{menu_text}", parse_mode=ParseMode.HTML)
-    if user_id not in last_messages:
-        last_messages[user_id] = {}
-    last_messages[user_id]["set"] = sent_message.id
-
-
-@app.on_message(filters.private & filters.command("run"))
-async def start_monitoring(client, message):
-    await message.delete()
-    user_id = message.from_user.id
-    if user_id in monitoring_users:
-        await message.reply(MONITORING_ALREADY_RUNNING, parse_mode=ParseMode.HTML)
-        return
-    steam_games = load_games(user_id)
-    if not steam_games:
-        await message.reply(MONITORING_NO_GAMES, parse_mode=ParseMode.HTML)
-        return
-    await message.reply(MONITORING_STARTED, parse_mode=ParseMode.HTML)
-    monitoring_users[user_id] = {
-        "task": asyncio.create_task(monitor_workshops(client, user_id)),
-        "last_items": {}
-    }
+    await show_settings_menu(client, user_id, message, text_prefix=response_text + "\n\n")
 
 
 async def monitor_workshops(client, user_id):
@@ -368,27 +347,24 @@ async def monitor_workshops(client, user_id):
                 known_items = load_game_items_info(user_id, game_id)
                 if not first_run and new_items:
                     for item in new_items:
-                        await process_and_send_item(known_items, user_id, game_id, game_name, item, client,
-                                                    send_if_new_or_updated=True)
+                        await process_and_send_item(known_items, user_id, game_id, game_name, item, client, True)
                     last_items[game_id] = new_items[0]['publishedfileid']
                     save_game_items_info(user_id, game_id, known_items)
                 elif first_run and new_items:
                     first = True
                     for item in new_items:
                         if first:
-                            await process_and_send_item(known_items, user_id, game_id, game_name, item, client,
-                                                        send_if_new_or_updated=True)
+                            await process_and_send_item(known_items, user_id, game_id, game_name, item, client, True)
                             first = False
                         else:
-                            await process_and_send_item(known_items, user_id, game_id, game_name, item, client,
-                                                        send_if_new_or_updated=False)
+                            await process_and_send_item(known_items, user_id, game_id, game_name, item, client, False)
                     last_items[game_id] = new_items[0]['publishedfileid']
                     save_game_items_info(user_id, game_id, known_items)
             await asyncio.sleep(10)
     except asyncio.CancelledError:
         pass
-    except Exception as e:
-        print(f"Error in monitoring loop for user {user_id}: {e}")
+    except:
+        pass
 
 
 async def get_new_workshop_items(game_id, last_publishedfileid):
@@ -426,8 +402,7 @@ async def get_new_workshop_items(game_id, last_publishedfileid):
                 break
             new_items.append(item)
         return new_items
-    except Exception as e:
-        print(f"Error fetching workshop items for game {game_id}: {e}")
+    except:
         return []
 
 
@@ -452,7 +427,6 @@ async def send_workshop_item(client, user_id, game_name, item):
     title = item.get('title', 'No Title')
     file_size_bytes = int(item.get('file_size', 0))
     file_size = "N/A"
-
     if file_size_bytes > 0:
         if file_size_bytes >= 1_073_741_824:
             file_size = f"{file_size_bytes / 1_073_741_824:.2f} GB"
@@ -460,15 +434,12 @@ async def send_workshop_item(client, user_id, game_name, item):
             file_size = f"{file_size_bytes / 1_048_576:.2f} MB"
         else:
             file_size = f"{file_size_bytes / 1024:.2f} KB"
-
     subscriptions = item.get('subscriptions', 0)
     favorited = item.get('favorited', 0)
     lifetime_subscriptions = item.get('lifetime_subscriptions', 0)
     lifetime_favorited = item.get('lifetime_favorited', 0)
-    views = item.get('views', 0)
     tags = ', '.join([tag.get('tag', '') for tag in item.get('tags', [])]) if item.get('tags') else 'N/A'
     item_url = f"https://steamcommunity.com/sharedfiles/filedetails/?id={item.get('publishedfileid', 'N/A')}"
-
     message_text = WORKSHOP_ITEM_MESSAGE.format(
         game_name=game_name,
         title=title,
@@ -477,29 +448,16 @@ async def send_workshop_item(client, user_id, game_name, item):
         favorited=favorited,
         lifetime_subscriptions=lifetime_subscriptions,
         lifetime_favorited=lifetime_favorited,
-        views=views,
         tags=tags,
         item_url=item_url
     )
-
     await client.send_message(chat_id=user_id, text=message_text, parse_mode=ParseMode.HTML)
-
-
-@app.on_message(filters.private & filters.command("stop"))
-async def stop_monitoring(client, message):
-    await message.delete()
-    user_id = message.from_user.id
-    if user_id not in monitoring_users:
-        await message.reply(MONITORING_NOT_RUNNING, parse_mode=ParseMode.HTML)
-        return
-    monitoring_users[user_id]["task"].cancel()
-    del monitoring_users[user_id]
-    await message.reply(MONITORING_STOPPED, parse_mode=ParseMode.HTML)
 
 
 @app.on_message(filters.private & filters.incoming)
 async def delete_user_messages(client, message):
-    await message.delete()
+    if not (message.text and message.text.startswith('/')):
+        await message.delete()
 
 
 if __name__ == "__main__":
