@@ -269,7 +269,10 @@ async def add_game(client, message):
     user_id = message.from_user.id
     if user_id in monitoring_users:
         await message.delete()
-        await message.reply(SET_DISABLED_DURING_MONITORING, parse_mode=ParseMode.HTML)
+        warning_msg = await message.reply(SET_DISABLED_DURING_MONITORING, parse_mode=ParseMode.HTML)
+        await show_settings_menu(client, user_id)
+        await asyncio.sleep(12)
+        await client.delete_messages(chat_id=message.chat.id, message_ids=[warning_msg.id])
         return
     await message.delete()
     steam_games = load_games(user_id)
@@ -288,24 +291,16 @@ async def add_game(client, message):
                     if has_workshop is True:
                         steam_games[game_id] = game_name
                         save_games(user_id, steam_games)
-                        response_text = ADD_GAME_SUCCESS.format(
-                            game_id=game_id, game_name=game_name
-                        )
+                        response_text = ADD_GAME_SUCCESS.format(game_id=game_id, game_name=game_name)
                     elif has_workshop is False:
-                        response_text = ADD_GAME_NO_WORKSHOP.format(
-                            game_id=game_id, game_name=game_name
-                        )
+                        response_text = ADD_GAME_NO_WORKSHOP.format(game_id=game_id, game_name=game_name)
                     else:
                         response_text = WORKSHOP_CHECK_FAILED
                 else:
-                    response_text = ADD_GAME_DUPLICATE.format(
-                        game_id=game_id, game_name=steam_games[game_id]
-                    )
+                    response_text = ADD_GAME_DUPLICATE.format(game_id=game_id, game_name=steam_games[game_id])
             else:
                 error_message = game_name_or_error
-                response_text = ADD_GAME_INVALID.format(
-                    game_id=game_id, error_message=error_message
-                )
+                response_text = ADD_GAME_INVALID.format(game_id=game_id, error_message=error_message)
         else:
             response_text = INVALID_ADD_FORMAT
     await show_settings_menu(client, user_id, message, text_prefix=response_text + "\n\n")
@@ -316,7 +311,10 @@ async def remove_game(client, message):
     user_id = message.from_user.id
     if user_id in monitoring_users:
         await message.delete()
-        await message.reply(SET_DISABLED_DURING_MONITORING, parse_mode=ParseMode.HTML)
+        warning_msg = await message.reply(SET_DISABLED_DURING_MONITORING, parse_mode=ParseMode.HTML)
+        await show_settings_menu(client, user_id)
+        await asyncio.sleep(12)
+        await client.delete_messages(chat_id=message.chat.id, message_ids=[warning_msg.id])
         return
     await message.delete()
     steam_games = load_games(user_id)
@@ -328,9 +326,7 @@ async def remove_game(client, message):
         if game_id in steam_games:
             removed_game = steam_games.pop(game_id)
             save_games(user_id, steam_games)
-            response_text = REMOVE_GAME_SUCCESS.format(
-                game_id=game_id, game_name=removed_game
-            )
+            response_text = REMOVE_GAME_SUCCESS.format(game_id=game_id, game_name=removed_game)
         else:
             response_text = REMOVE_GAME_NOT_FOUND.format(game_id=game_id)
     await show_settings_menu(client, user_id, message, text_prefix=response_text + "\n\n")
