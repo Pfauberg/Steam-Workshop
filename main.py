@@ -11,8 +11,8 @@ from pyrogram.enums import ParseMode
 
 GAME_LIST_HEADER = "<b>Steam games list:</b>"
 GAME_LIST_EMPTY = "No games added yet."
-ADD_GAME_USAGE = "To add a game, use: <code>add GAME_ID</code> or <code>add URL</code>"
-REMOVE_GAME_USAGE = "To remove a game, use: <code>rm GAME_ID</code>"
+ADD_GAME_USAGE = "To add a game, use: <code>Add GAME_ID</code> or <code>Add URL</code>"
+REMOVE_GAME_USAGE = "To remove a game, use: <code>Rm GAME_ID</code>"
 SET_MENU_FOOTER = ""
 
 ADD_GAME_SUCCESS = "Game [ <code>{game_id}</code> ] - <b>\"{game_name}\"</b> has been added to your list."
@@ -188,8 +188,12 @@ async def show_settings_menu(client, user_id, message=None, text_prefix=""):
         footer = "Monitoring is running."
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop", callback_data="stop_monitoring")]])
     else:
-        footer = "Press Run to start monitoring."
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Run", callback_data="run_monitoring")]])
+        if steam_games:
+            footer = "Press Run to start monitoring."
+            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Run", callback_data="run_monitoring")]])
+        else:
+            footer = "Add some games to start monitoring."
+            keyboard = None
 
     menu_text = SET_MENU_TEMPLATE.format(
         game_list_header=GAME_LIST_HEADER,
