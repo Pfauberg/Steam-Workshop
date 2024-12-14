@@ -49,6 +49,11 @@ SET_MENU_TEMPLATE = (
     "{footer}"
 )
 
+WELCOME_MESSAGE = (
+    "<b>❗️ W E L C O M E ❗️</b>"
+)
+
+
 config = configparser.ConfigParser()
 config.read('config.ini')
 
@@ -65,6 +70,33 @@ monitoring_users = {}
 USER_GAMES_FOLDER = "user_games"
 if not os.path.exists(USER_GAMES_FOLDER):
     os.makedirs(USER_GAMES_FOLDER)
+
+USERS_FILE = "users.json"
+if not os.path.exists(USERS_FILE):
+    with open(USERS_FILE, "w") as f:
+        json.dump([], f)
+
+
+def load_known_users():
+    with open(USERS_FILE, "r") as f:
+        return json.load(f)
+
+
+def save_known_users(users_list):
+    with open(USERS_FILE, "w") as f:
+        json.dump(users_list, f)
+
+
+def user_is_known(user_id):
+    users_list = load_known_users()
+    return user_id in users_list
+
+
+def add_user_to_known(user_id):
+    users_list = load_known_users()
+    if user_id not in users_list:
+        users_list.append(user_id)
+        save_known_users(users_list)
 
 
 def get_user_dir(user_id):
@@ -183,7 +215,6 @@ async def show_settings_menu(client, user_id, message=None, text_prefix=""):
     game_list = "\n".join(
         [f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]
     ) or GAME_LIST_EMPTY
-
     if user_id in monitoring_users:
         footer = "Monitoring is running."
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop", callback_data="stop_monitoring")]])
@@ -194,7 +225,6 @@ async def show_settings_menu(client, user_id, message=None, text_prefix=""):
         else:
             footer = "Add some games to start monitoring."
             keyboard = None
-
     menu_text = SET_MENU_TEMPLATE.format(
         game_list_header=GAME_LIST_HEADER,
         game_list=game_list,
@@ -202,7 +232,6 @@ async def show_settings_menu(client, user_id, message=None, text_prefix=""):
         remove_game_usage=REMOVE_GAME_USAGE,
         footer=footer
     )
-
     full_text = f"{text_prefix}{menu_text}".strip()
     if message:
         await delete_last_message(user_id, "settings", client, message.chat.id)
@@ -222,10 +251,21 @@ async def start(client, message):
     await message.delete()
     user_id = message.from_user.id
     commands = [
-        BotCommand("start", "❗️ M E N U ❗️")
+        BotCommand("start", "❗️ M E N U ❗️"),
+        BotCommand("help", "📄 D O C S 📄")
     ]
     await client.set_bot_commands(commands)
+    if not user_is_known(user_id):
+        await client.send_message(user_id, WELCOME_MESSAGE)
+        add_user_to_known(user_id)
     await show_settings_menu(client, user_id, message)
+
+
+@app.on_message(filters.private & filters.command("help"))
+async def help_command(client, message):
+    await message.delete()
+    user_id = message.from_user.id
+    help_msg = await client.send_message(user_id, WELCOME_MESSAGE, parse_mode=ParseMode.HTML)
 
 
 @app.on_callback_query(filters.regex("^run_monitoring$"))
@@ -245,7 +285,6 @@ async def run_monitoring_callback(client, callback_query: CallbackQuery):
     await callback_query.answer(MONITORING_STARTED, show_alert=True)
     game_list = '\n'.join(
         [f'[ <code>{g_id}</code> ] - {g_name}' for g_id, g_name in steam_games.items()]) or GAME_LIST_EMPTY
-
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop", callback_data="stop_monitoring")]])
     await callback_query.message.edit_text(
         text=f"{GAME_LIST_HEADER}\n{game_list}\n\n"
