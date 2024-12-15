@@ -53,6 +53,8 @@ WELCOME_MESSAGE = (
     "<b>❗️ W E L C O M E ❗️</b>"
 )
 
+SETTINGS_SUBMENU_TEXT = "<b>Settings Page</b>\n\n...\n\nsoon...\n\n..."
+
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -217,14 +219,21 @@ async def show_settings_menu(client, user_id, message=None, text_prefix=""):
     ) or GAME_LIST_EMPTY
     if user_id in monitoring_users:
         footer = "Monitoring is running."
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop", callback_data="stop_monitoring")]])
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Stop", callback_data="stop_monitoring")]
+        ])
     else:
         if steam_games:
             footer = "Press Run to start monitoring."
-            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Run", callback_data="run_monitoring")]])
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Settings", callback_data="open_settings_submenu")],
+                [InlineKeyboardButton("Run", callback_data="run_monitoring")]
+            ])
         else:
             footer = "Add some games to start monitoring."
-            keyboard = None
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Settings", callback_data="open_settings_submenu")]
+            ])
     menu_text = SET_MENU_TEMPLATE.format(
         game_list_header=GAME_LIST_HEADER,
         game_list=game_list,
@@ -240,10 +249,17 @@ async def show_settings_menu(client, user_id, message=None, text_prefix=""):
         chat_id = user_id
         await delete_last_message(user_id, "settings", client, chat_id)
         sent_message = await client.send_message(chat_id, full_text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
-
     if user_id not in last_messages:
         last_messages[user_id] = {}
     last_messages[user_id]["settings"] = sent_message.id
+
+
+async def show_settings_submenu(client, user_id, callback_query):
+    text = SETTINGS_SUBMENU_TEXT
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Back", callback_data="back_to_main_menu")]
+    ])
+    await callback_query.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
 
 
 @app.on_message(filters.private & filters.command("start"))
@@ -265,7 +281,7 @@ async def start(client, message):
 async def help_command(client, message):
     await message.delete()
     user_id = message.from_user.id
-    help_msg = await client.send_message(user_id, WELCOME_MESSAGE, parse_mode=ParseMode.HTML)
+    await client.send_message(user_id, WELCOME_MESSAGE, parse_mode=ParseMode.HTML)
 
 
 @app.on_callback_query(filters.regex("^run_monitoring$"))
@@ -285,7 +301,9 @@ async def run_monitoring_callback(client, callback_query: CallbackQuery):
     await callback_query.answer(MONITORING_STARTED, show_alert=True)
     game_list = '\n'.join(
         [f'[ <code>{g_id}</code> ] - {g_name}' for g_id, g_name in steam_games.items()]) or GAME_LIST_EMPTY
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop", callback_data="stop_monitoring")]])
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Stop", callback_data="stop_monitoring")]
+    ])
     await callback_query.message.edit_text(
         text=f"{GAME_LIST_HEADER}\n{game_list}\n\n"
              f"{ADD_GAME_USAGE}\n{REMOVE_GAME_USAGE}\n\n"
@@ -304,7 +322,49 @@ async def stop_monitoring_callback(client, callback_query: CallbackQuery):
     monitoring_users[user_id]["task"].cancel()
     del monitoring_users[user_id]
     await callback_query.answer(MONITORING_STOPPED, show_alert=True)
-    await show_settings_menu(client, user_id)
+    await show_settings_menu(client, user_id, callback_query.message)
+
+
+@app.on_callback_query(filters.regex("^open_settings_submenu$"))
+async def open_settings_submenu_callback(client, callback_query: CallbackQuery):
+    user_id = callback_query.from_user.id
+    await callback_query.answer()
+    await show_settings_submenu(client, user_id, callback_query)
+
+
+@app.on_callback_query(filters.regex("^back_to_main_menu$"))
+async def back_to_main_menu_callback(client, callback_query: CallbackQuery):
+    user_id = callback_query.from_user.id
+    await callback_query.answer()
+    steam_games = load_games(user_id)
+    game_list = "\n".join(
+        [f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]
+    ) or GAME_LIST_EMPTY
+    if user_id in monitoring_users:
+        footer = "Monitoring is running."
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Stop", callback_data="stop_monitoring")]
+        ])
+    else:
+        if steam_games:
+            footer = "Press Run to start monitoring."
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Settings", callback_data="open_settings_submenu")],
+                [InlineKeyboardButton("Run", callback_data="run_monitoring")]
+            ])
+        else:
+            footer = "Add some games to start monitoring."
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Settings", callback_data="open_settings_submenu")]
+            ])
+    menu_text = SET_MENU_TEMPLATE.format(
+        game_list_header=GAME_LIST_HEADER,
+        game_list=game_list,
+        add_game_usage=ADD_GAME_USAGE,
+        remove_game_usage=REMOVE_GAME_USAGE,
+        footer=footer
+    )
+    await callback_query.message.edit_text(menu_text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
 
 
 @app.on_message(filters.private & filters.regex(r"(?i)^add\s+"))
