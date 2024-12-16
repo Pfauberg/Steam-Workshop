@@ -7,12 +7,13 @@ import re
 from pyrogram import Client, filters
 from pyrogram.types import BotCommand, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pyrogram.enums import ParseMode
+from pyrogram.errors import MessageNotModified
 
 
 GAME_LIST_HEADER = "<b>Steam games list:</b>"
 GAME_LIST_EMPTY = "No games added yet."
-ADD_GAME_USAGE = "To add a game, use: <code>Add GAME_ID</code> or <code>Add URL</code>"
-REMOVE_GAME_USAGE = "To remove a game, use: <code>Rm GAME_ID</code>"
+ADD_GAME_USAGE = "To add a game, type: <code>Add GAME_ID</code> or <code>Add URL</code>"
+REMOVE_GAME_USAGE = "To remove a game, type: <code>Rm GAME_ID</code>"
 SET_MENU_FOOTER = ""
 
 ADD_GAME_SUCCESS = "Game [ <code>{game_id}</code> ] - <b>\"{game_name}\"</b> has been added to your list."
@@ -22,7 +23,7 @@ ADD_GAME_NO_WORKSHOP = "Game [ <code>{game_id}</code> ] - <b>\"{game_name}\"</b>
 REMOVE_GAME_SUCCESS = "Game [ <code>{game_id}</code> ] - <b>\"{game_name}\"</b> has been removed from your list."
 REMOVE_GAME_NOT_FOUND = "Game [ <code>{game_id}</code> ] is not in your list."
 INVALID_ADD_FORMAT = "Invalid format. Use: <code>add GAME_ID</code> or <code>add URL</code>"
-INVALID_REMOVE_FORMAT = "Invalid format. Use: <code>rm GAME_ID</code>"
+INVALID_REMOVE_FORMAT = "Incorrect format. Use: <code>rm GAME_ID</code>"
 WORKSHOP_CHECK_FAILED = "Could not check if the game has a Steam Workshop."
 
 MONITORING_STARTED = "Monitoring started."
@@ -35,7 +36,7 @@ SET_DISABLED_DURING_MONITORING = "You cannot modify the game list while monitori
 WORKSHOP_ITEM_MESSAGE = (
     "<b>[ {game_name} ] – {title}</b>\n\n"
     "<b>💾 Size:</b> {file_size}\n\n"
-    "<b>📥 Subscriptions:</b> {subscriptions} ({lifetime_subscriptions})\n"
+    "<b>📥 Subscriptions:</b> {subscriptions} ({lifetime_subscriptions})\n\n"
     "<b>⭐ Favorited:</b> {favorited} ({lifetime_favorited})\n\n"
     "<b>🏷️ Tags:</b> {tags}\n\n"
     "<b>🔗 [ <a href=\"{item_url}\">View Item</a> ]</b>"
@@ -52,17 +53,21 @@ SET_MENU_TEMPLATE = (
 WELCOME_MESSAGE = "<b>❗️ W E L C O M E ❗️</b>"
 
 SETTINGS_SUBMENU_TEXT = (
-    "<b>Settings Page</b>\n\n"
-    "Current filters:\n{current_filters}\n\n"
-    "You can set filters using:\n"
-    "<code>set size >100mb</code>\n"
-    "<code>set subs <10000</code>\n"
-    "<code>set favs =500</code>\n"
-    "<code>set ltsubs off</code>\n\n"
-    "Available: size, subs (subscriptions), favs (favorited), ltsubs (lifetime_subscriptions), ltfavs (lifetime_favorited)\n\n"
-    "Operators: >, <, =\n"
-    "Units for size: kb, mb, gb\n\n"
-    "When done, press Back."
+    "⚙️ <b>Settings Page</b> ⚙️\n\n"
+    "📝 <b>Current filters:</b>\n<blockquote>{current_filters}</blockquote>\n\n"
+    "🛠 <b>Set filters using these examples (send the command as a message):</b>\n"
+    "<blockquote><code>set size >100mb</code> <b>- Filter by file size</b>\n"
+    "<code>set subs <10000</code> <b>- Filter by subscriptions</b>\n"
+    "<code>set ltfavs off</code> <b>- Disable lifetime favorited filter</b></blockquote>\n\n"
+    "☑️ <b>Available filters:</b>\n"
+    "<blockquote><code>size</code> <b>- File size</b>\n"
+    "<code>subs</code> <b>- Subscriptions</b>\n"
+    "<code>ltsubs</code> <b>- Lifetime subscriptions</b>\n"
+    "<code>favs</code> <b>- Favorited</b>\n"
+    "<code>ltfavs</code> <b>- Lifetime favorited</b></blockquote>\n\n"
+    "⚙️ <b>Operators:</b> [ <code>></code>  ] <b>and</b> [ <code><</code>  ]\n"
+    "📐 <b>Use</b> [ <code>kb</code>  ][ <code>mb</code>  ][ <code>gb</code>  ] <b>for size</b>\n\n"
+    "<b>⬇️ When done, press: ⬇️</b>"
 )
 
 
@@ -195,6 +200,16 @@ def set_user_filter(user_id, filter_name, filter_data):
     else:
         uf[filter_name] = filter_data
     save_user_filters(user_id, uf)
+    clear_user_items(user_id)
+
+
+def clear_user_items(user_id):
+    user_dir = get_user_dir(user_id)
+    for filename in os.listdir(user_dir):
+        if filename.endswith(".json") and filename != "games.json" and filename != "filters.json":
+            path = os.path.join(user_dir, filename)
+            with open(path, "w") as f:
+                json.dump({}, f)
 
 
 def format_filters(filters_dict):
@@ -239,18 +254,22 @@ def parse_filter_command(command_str):
     f_cond = parts[2].strip()
     if f_cond == "off":
         return (f_name, None)
-    if f_cond[0] in ['>', '<', '=']:
+    if f_cond[0] in ['>', '<']:
         op = f_cond[0]
         val_str = f_cond[1:].strip()
         if f_name == "size":
+            if not re.match(r"^\d+(\.\d{1,2})?(kb|mb|gb)$", val_str, re.IGNORECASE):
+                return None
             try:
                 value = parse_size(val_str)
-            except:
+            except ValueError:
                 return None
         else:
             if not val_str.isdigit():
                 return None
             value = int(val_str)
+            if value < 0:
+                return None
         return (f_name, (op, value))
     return None
 
@@ -277,13 +296,10 @@ def check_filters(user_id, item):
         elif f_name == 'ltfavs':
             actual_val = lifetime_favorited
         if op == '>':
-            if not (actual_val > val):
+            if not (actual_val >= val):
                 return False
         elif op == '<':
-            if not (actual_val < val):
-                return False
-        elif op == '=':
-            if not (actual_val == val):
+            if not (actual_val <= val):
                 return False
     return True
 
@@ -686,23 +702,25 @@ async def handle_incoming_private(client, message):
         parsed = parse_filter_command(text)
         await message.delete()
         if parsed is None:
-            warning_msg = await message.reply("Invalid set command format. Use like: <code>set size >100mb</code>", parse_mode=ParseMode.HTML)
-            await asyncio.sleep(5)
-            await warning_msg.delete()
             return
         f_name, f_data = parsed
         valid_filters = ["size", "subs", "favs", "ltsubs", "ltfavs"]
         if f_name not in valid_filters:
-            warning_msg = await message.reply("Unknown filter name. Use one of: size, subs, favs, ltsubs, ltfavs", parse_mode=ParseMode.HTML)
-            await asyncio.sleep(5)
-            await warning_msg.delete()
             return
         set_user_filter(user_id, f_name, f_data)
         user_filters = get_user_filters(user_id)
         current_filters_text = format_filters(user_filters)
         text_to_show = SETTINGS_SUBMENU_TEXT.format(current_filters=current_filters_text)
-        await client.edit_message_text(user_id, last_messages[user_id]["settings"], text_to_show, parse_mode=ParseMode.HTML,
-                                       reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="back_to_main_menu")]]))
+        try:
+            await client.edit_message_text(
+                user_id,
+                last_messages[user_id]["settings"],
+                text_to_show,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="back_to_main_menu")]])
+            )
+        except MessageNotModified:
+            pass
     else:
         await message.delete()
 
