@@ -49,11 +49,21 @@ SET_MENU_TEMPLATE = (
     "{footer}"
 )
 
-WELCOME_MESSAGE = (
-    "<b>❗️ W E L C O M E ❗️</b>"
-)
+WELCOME_MESSAGE = "<b>❗️ W E L C O M E ❗️</b>"
 
-SETTINGS_SUBMENU_TEXT = "<b>Settings Page</b>\n\n...\n\nsoon...\n\n..."
+SETTINGS_SUBMENU_TEXT = (
+    "<b>Settings Page</b>\n\n"
+    "Current filters:\n{current_filters}\n\n"
+    "You can set filters using:\n"
+    "<code>set size >100mb</code>\n"
+    "<code>set subs <10000</code>\n"
+    "<code>set favs =500</code>\n"
+    "<code>set ltsubs off</code>\n\n"
+    "Available: size, subs (subscriptions), favs (favorited), ltsubs (lifetime_subscriptions), ltfavs (lifetime_favorited)\n\n"
+    "Operators: >, <, =\n"
+    "Units for size: kb, mb, gb\n\n"
+    "When done, press Back."
+)
 
 
 config = configparser.ConfigParser()
@@ -116,6 +126,10 @@ def get_game_items_file(user_id, game_id):
     return os.path.join(get_user_dir(user_id), f"{game_id}.json")
 
 
+def get_user_filters_file(user_id):
+    return os.path.join(get_user_dir(user_id), "filters.json")
+
+
 def load_games(user_id):
     games_file = get_user_games_file(user_id)
     try:
@@ -152,44 +166,126 @@ def save_game_items_info(user_id, game_id, items_dict):
         json.dump(items_dict, f)
 
 
-def is_valid_game(game_id):
+def load_user_filters(user_id):
+    path = get_user_filters_file(user_id)
+    if not os.path.exists(path):
+        return {}
     try:
-        url = f"https://store.steampowered.com/api/appdetails?appids={game_id}"
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            if data[str(game_id)]["success"]:
-                app_data = data[str(game_id)]["data"]
-                if app_data["type"] == "game":
-                    return True, app_data["name"]
-                else:
-                    return False, f"Type is {app_data['type']}"
+        with open(path, "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+
+def save_user_filters(user_id, filters_data):
+    path = get_user_filters_file(user_id)
+    with open(path, "w") as f:
+        json.dump(filters_data, f)
+
+
+def get_user_filters(user_id):
+    return load_user_filters(user_id)
+
+
+def set_user_filter(user_id, filter_name, filter_data):
+    uf = load_user_filters(user_id)
+    if filter_data is None:
+        if filter_name in uf:
+            del uf[filter_name]
+    else:
+        uf[filter_name] = filter_data
+    save_user_filters(user_id, uf)
+
+
+def format_filters(filters_dict):
+    if not filters_dict:
+        return "No filters set."
+    lines = []
+    for key, val in filters_dict.items():
+        op, value = val
+        if key == "size":
+            if value >= 1024**3:
+                readable = f"{value/(1024**3):.2f}gb"
+            elif value >= 1024**2:
+                readable = f"{value/(1024**2):.2f}mb"
+            elif value >= 1024:
+                readable = f"{value/1024:.2f}kb"
             else:
-                return False, "Game ID not found."
+                readable = f"{value}b"
+            lines.append(f"{key}: {op}{readable}")
         else:
-            return False, f"HTTP Error {response.status_code}"
-    except:
-        return False, "Exception occurred during game validation."
+            lines.append(f"{key}: {op}{value}")
+    return "\n".join(lines)
 
 
-def check_workshop_exists(app_id, api_key):
-    url = "https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/"
-    params = {
-        "key": api_key,
-        "appid": app_id,
-        "query_type": 0,
-        "numperpage": 1,
-    }
-    try:
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
-        total_items = data.get("response", {}).get("total", 0)
-        if total_items > 0:
-            return True
-        return False
-    except:
+def parse_size(s):
+    s = s.lower()
+    if s.endswith("kb"):
+        val = float(s.replace("kb","")) * 1024
+    elif s.endswith("mb"):
+        val = float(s.replace("mb","")) * 1024**2
+    elif s.endswith("gb"):
+        val = float(s.replace("gb","")) * 1024**3
+    else:
+        val = float(s)
+    return int(val)
+
+
+def parse_filter_command(command_str):
+    parts = command_str.split(maxsplit=3)
+    if len(parts) < 3:
         return None
+    f_name = parts[1].lower().strip()
+    f_cond = parts[2].strip()
+    if f_cond == "off":
+        return (f_name, None)
+    if f_cond[0] in ['>', '<', '=']:
+        op = f_cond[0]
+        val_str = f_cond[1:].strip()
+        if f_name == "size":
+            try:
+                value = parse_size(val_str)
+            except:
+                return None
+        else:
+            if not val_str.isdigit():
+                return None
+            value = int(val_str)
+        return (f_name, (op, value))
+    return None
+
+
+def check_filters(user_id, item):
+    filters_dict = get_user_filters(user_id)
+    if not filters_dict:
+        return True
+    file_size_bytes = int(item.get('file_size', 0))
+    subscriptions = int(item.get('subscriptions', 0))
+    favorited = int(item.get('favorited', 0))
+    lifetime_subscriptions = int(item.get('lifetime_subscriptions', 0))
+    lifetime_favorited = int(item.get('lifetime_favorited', 0))
+    for f_name, (op, val) in filters_dict.items():
+        actual_val = None
+        if f_name == 'size':
+            actual_val = file_size_bytes
+        elif f_name == 'subs':
+            actual_val = subscriptions
+        elif f_name == 'favs':
+            actual_val = favorited
+        elif f_name == 'ltsubs':
+            actual_val = lifetime_subscriptions
+        elif f_name == 'ltfavs':
+            actual_val = lifetime_favorited
+        if op == '>':
+            if not (actual_val > val):
+                return False
+        elif op == '<':
+            if not (actual_val < val):
+                return False
+        elif op == '=':
+            if not (actual_val == val):
+                return False
+    return True
 
 
 async def delete_last_message(user_id, command, client, chat_id):
@@ -208,20 +304,15 @@ def extract_game_id(input_str):
     match = re.match(pattern, input_str)
     if match:
         return match.group(1)
-    else:
-        return None
+    return None
 
 
 async def show_settings_menu(client, user_id, message=None, text_prefix=""):
     steam_games = load_games(user_id)
-    game_list = "\n".join(
-        [f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]
-    ) or GAME_LIST_EMPTY
-    if user_id in monitoring_users:
+    game_list = "\n".join([f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]) or GAME_LIST_EMPTY
+    if user_id in monitoring_users and "task" in monitoring_users[user_id]:
         footer = "Monitoring is running."
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Stop", callback_data="stop_monitoring")]
-        ])
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop", callback_data="stop_monitoring")]])
     else:
         if steam_games:
             footer = "Press Run to start monitoring."
@@ -255,11 +346,46 @@ async def show_settings_menu(client, user_id, message=None, text_prefix=""):
 
 
 async def show_settings_submenu(client, user_id, callback_query):
-    text = SETTINGS_SUBMENU_TEXT
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Back", callback_data="back_to_main_menu")]
-    ])
+    user_filters = get_user_filters(user_id)
+    current_filters_text = format_filters(user_filters)
+    text = SETTINGS_SUBMENU_TEXT.format(current_filters=current_filters_text)
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="back_to_main_menu")]])
     await callback_query.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+
+
+def is_valid_game(game_id):
+    try:
+        url = f"https://store.steampowered.com/api/appdetails?appids={game_id}"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            if data[str(game_id)]["success"]:
+                app_data = data[str(game_id)]["data"]
+                if app_data["type"] == "game":
+                    return True, app_data["name"]
+                else:
+                    return False, f"Type is {app_data['type']}"
+            else:
+                return False, "Game ID not found."
+        else:
+            return False, f"HTTP Error {response.status_code}"
+    except:
+        return False, "Exception occurred during game validation."
+
+
+def check_workshop_exists(app_id, api_key):
+    url = "https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/"
+    params = {"key": api_key, "appid": app_id, "query_type": 0, "numperpage": 1}
+    try:
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+        total_items = data.get("response", {}).get("total", 0)
+        if total_items > 0:
+            return True
+        return False
+    except:
+        return None
 
 
 @app.on_message(filters.private & filters.command("start"))
@@ -287,7 +413,7 @@ async def help_command(client, message):
 @app.on_callback_query(filters.regex("^run_monitoring$"))
 async def run_monitoring_callback(client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
-    if user_id in monitoring_users:
+    if user_id in monitoring_users and "task" in monitoring_users[user_id]:
         await callback_query.answer(MONITORING_ALREADY_RUNNING, show_alert=True)
         return
     steam_games = load_games(user_id)
@@ -299,11 +425,8 @@ async def run_monitoring_callback(client, callback_query: CallbackQuery):
         "last_items": {}
     }
     await callback_query.answer(MONITORING_STARTED, show_alert=True)
-    game_list = '\n'.join(
-        [f'[ <code>{g_id}</code> ] - {g_name}' for g_id, g_name in steam_games.items()]) or GAME_LIST_EMPTY
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Stop", callback_data="stop_monitoring")]
-    ])
+    game_list = '\n'.join([f'[ <code>{g_id}</code> ] - {g_name}' for g_id, g_name in steam_games.items()]) or GAME_LIST_EMPTY
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop", callback_data="stop_monitoring")]])
     await callback_query.message.edit_text(
         text=f"{GAME_LIST_HEADER}\n{game_list}\n\n"
              f"{ADD_GAME_USAGE}\n{REMOVE_GAME_USAGE}\n\n"
@@ -316,7 +439,7 @@ async def run_monitoring_callback(client, callback_query: CallbackQuery):
 @app.on_callback_query(filters.regex("^stop_monitoring$"))
 async def stop_monitoring_callback(client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
-    if user_id not in monitoring_users:
+    if user_id not in monitoring_users or "task" not in monitoring_users[user_id]:
         await callback_query.answer(MONITORING_NOT_RUNNING, show_alert=True)
         return
     monitoring_users[user_id]["task"].cancel()
@@ -329,6 +452,9 @@ async def stop_monitoring_callback(client, callback_query: CallbackQuery):
 async def open_settings_submenu_callback(client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
     await callback_query.answer()
+    if "user_mode" not in monitoring_users:
+        monitoring_users["user_mode"] = {}
+    monitoring_users["user_mode"][user_id] = "settings_submenu"
     await show_settings_submenu(client, user_id, callback_query)
 
 
@@ -336,15 +462,13 @@ async def open_settings_submenu_callback(client, callback_query: CallbackQuery):
 async def back_to_main_menu_callback(client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
     await callback_query.answer()
+    if "user_mode" in monitoring_users and user_id in monitoring_users["user_mode"]:
+        del monitoring_users["user_mode"][user_id]
     steam_games = load_games(user_id)
-    game_list = "\n".join(
-        [f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]
-    ) or GAME_LIST_EMPTY
-    if user_id in monitoring_users:
+    game_list = "\n".join([f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]) or GAME_LIST_EMPTY
+    if user_id in monitoring_users and "task" in monitoring_users[user_id]:
         footer = "Monitoring is running."
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Stop", callback_data="stop_monitoring")]
-        ])
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop", callback_data="stop_monitoring")]])
     else:
         if steam_games:
             footer = "Press Run to start monitoring."
@@ -370,7 +494,7 @@ async def back_to_main_menu_callback(client, callback_query: CallbackQuery):
 @app.on_message(filters.private & filters.regex(r"(?i)^add\s+"))
 async def add_game(client, message):
     user_id = message.from_user.id
-    if user_id in monitoring_users:
+    if user_id in monitoring_users and "task" in monitoring_users[user_id]:
         await message.delete()
         warning_msg = await message.reply(SET_DISABLED_DURING_MONITORING, parse_mode=ParseMode.HTML)
         await show_settings_menu(client, user_id)
@@ -412,7 +536,7 @@ async def add_game(client, message):
 @app.on_message(filters.private & filters.regex(r"(?i)^rm\s\d+$"))
 async def remove_game(client, message):
     user_id = message.from_user.id
-    if user_id in monitoring_users:
+    if user_id in monitoring_users and "task" in monitoring_users[user_id]:
         await message.delete()
         warning_msg = await message.reply(SET_DISABLED_DURING_MONITORING, parse_mode=ParseMode.HTML)
         await show_settings_menu(client, user_id)
@@ -438,7 +562,7 @@ async def remove_game(client, message):
 async def monitor_workshops(client, user_id):
     last_items = monitoring_users[user_id]["last_items"]
     try:
-        while user_id in monitoring_users:
+        while user_id in monitoring_users and "task" in monitoring_users[user_id]:
             steam_games = load_games(user_id)
             for game_id, game_name in steam_games.items():
                 first_run = (game_id not in last_items)
@@ -518,7 +642,7 @@ async def process_and_send_item(known_items, user_id, game_id, game_name, item, 
             else:
                 break
         save_game_items_info(user_id, game_id, known_items)
-        if send_if_new_or_updated:
+        if send_if_new_or_updated and check_filters(user_id, item):
             await send_workshop_item(client, user_id, game_name, item)
 
 
@@ -553,9 +677,33 @@ async def send_workshop_item(client, user_id, game_name, item):
     await client.send_message(chat_id=user_id, text=message_text, parse_mode=ParseMode.HTML)
 
 
-@app.on_message(filters.private & filters.incoming)
-async def delete_user_messages(client, message):
-    if not (message.text and message.text.startswith('/')):
+@app.on_message(filters.private & filters.incoming & ~filters.command("start") & ~filters.command("help"))
+async def handle_incoming_private(client, message):
+    user_id = message.from_user.id
+    text = message.text.strip().lower()
+    in_settings_submenu = ("user_mode" in monitoring_users and user_id in monitoring_users["user_mode"] and monitoring_users["user_mode"][user_id] == "settings_submenu")
+    if text.startswith("set ") and in_settings_submenu:
+        parsed = parse_filter_command(text)
+        await message.delete()
+        if parsed is None:
+            warning_msg = await message.reply("Invalid set command format. Use like: <code>set size >100mb</code>", parse_mode=ParseMode.HTML)
+            await asyncio.sleep(5)
+            await warning_msg.delete()
+            return
+        f_name, f_data = parsed
+        valid_filters = ["size", "subs", "favs", "ltsubs", "ltfavs"]
+        if f_name not in valid_filters:
+            warning_msg = await message.reply("Unknown filter name. Use one of: size, subs, favs, ltsubs, ltfavs", parse_mode=ParseMode.HTML)
+            await asyncio.sleep(5)
+            await warning_msg.delete()
+            return
+        set_user_filter(user_id, f_name, f_data)
+        user_filters = get_user_filters(user_id)
+        current_filters_text = format_filters(user_filters)
+        text_to_show = SETTINGS_SUBMENU_TEXT.format(current_filters=current_filters_text)
+        await client.edit_message_text(user_id, last_messages[user_id]["settings"], text_to_show, parse_mode=ParseMode.HTML,
+                                       reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="back_to_main_menu")]]))
+    else:
         await message.delete()
 
 
