@@ -67,7 +67,7 @@ SETTINGS_SUBMENU_TEXT = (
     "<code>ltfavs</code> <b>- Lifetime favorited</b></blockquote>\n\n"
     "⚙️ <b>Operators:</b> [ <code>></code>  ] <b>and</b> [ <code><</code>  ]\n"
     "📐 <b>Use</b> [ <code>kb</code>  ][ <code>mb</code>  ][ <code>gb</code>  ] <b>for size</b>\n\n"
-    "<b>⬇️ When done, press: ⬇️</b>"
+    "<b>PS: When you're done, press \"Back\":</b>"
 )
 
 
@@ -328,18 +328,18 @@ async def show_settings_menu(client, user_id, message=None, text_prefix=""):
     game_list = "\n".join([f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]) or GAME_LIST_EMPTY
     if user_id in monitoring_users and "task" in monitoring_users[user_id]:
         footer = "Monitoring is running."
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop", callback_data="stop_monitoring")]])
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop 🔴", callback_data="stop_monitoring")]])
     else:
         if steam_games:
             footer = "Press Run to start monitoring."
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Settings", callback_data="open_settings_submenu")],
-                [InlineKeyboardButton("Run", callback_data="run_monitoring")]
+                [InlineKeyboardButton("Settings ⚙️", callback_data="open_settings_submenu")],
+                [InlineKeyboardButton("🟢 Run", callback_data="run_monitoring")]
             ])
         else:
             footer = "Add some games to start monitoring."
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Settings", callback_data="open_settings_submenu")]
+                [InlineKeyboardButton("Settings ⚙️", callback_data="open_settings_submenu")]
             ])
     menu_text = SET_MENU_TEMPLATE.format(
         game_list_header=GAME_LIST_HEADER,
@@ -361,11 +361,45 @@ async def show_settings_menu(client, user_id, message=None, text_prefix=""):
     last_messages[user_id]["settings"] = sent_message.id
 
 
+@app.on_callback_query(filters.regex("^next_to_second_page$"))
+async def next_to_second_page(client, callback_query):
+    user_id = callback_query.from_user.id
+    text = "<b>Hello, World! The second page of settings is under development.</b>"
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("◀️ Back", callback_data="back_to_settings_submenu")]
+    ])
+    await callback_query.message.edit_text(
+        text=text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard
+    )
+
+
+@app.on_callback_query(filters.regex("^back_to_settings_submenu$"))
+async def back_to_settings_submenu(client, callback_query):
+    user_id = callback_query.from_user.id
+    user_filters = get_user_filters(user_id)
+    current_filters_text = format_filters(user_filters)
+    text = SETTINGS_SUBMENU_TEXT.format(current_filters=current_filters_text)
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Next ▶️", callback_data="next_to_second_page")],
+        [InlineKeyboardButton("◀️ Back", callback_data="back_to_main_menu")]
+    ])
+    await callback_query.message.edit_text(
+        text=text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard
+    )
+
+
 async def show_settings_submenu(client, user_id, callback_query):
     user_filters = get_user_filters(user_id)
     current_filters_text = format_filters(user_filters)
     text = SETTINGS_SUBMENU_TEXT.format(current_filters=current_filters_text)
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="back_to_main_menu")]])
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Next ▶️", callback_data="next_to_second_page")],
+        [InlineKeyboardButton("◀️ Back", callback_data="back_to_main_menu")]
+    ])
     await callback_query.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
 
 
@@ -442,7 +476,7 @@ async def run_monitoring_callback(client, callback_query: CallbackQuery):
     }
     await callback_query.answer(MONITORING_STARTED, show_alert=True)
     game_list = '\n'.join([f'[ <code>{g_id}</code> ] - {g_name}' for g_id, g_name in steam_games.items()]) or GAME_LIST_EMPTY
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop", callback_data="stop_monitoring")]])
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop 🔴", callback_data="stop_monitoring")]])
     await callback_query.message.edit_text(
         text=f"{GAME_LIST_HEADER}\n{game_list}\n\n"
              f"{ADD_GAME_USAGE}\n{REMOVE_GAME_USAGE}\n\n"
@@ -484,18 +518,18 @@ async def back_to_main_menu_callback(client, callback_query: CallbackQuery):
     game_list = "\n".join([f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]) or GAME_LIST_EMPTY
     if user_id in monitoring_users and "task" in monitoring_users[user_id]:
         footer = "Monitoring is running."
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop", callback_data="stop_monitoring")]])
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop 🔴", callback_data="stop_monitoring")]])
     else:
         if steam_games:
             footer = "Press Run to start monitoring."
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Settings", callback_data="open_settings_submenu")],
-                [InlineKeyboardButton("Run", callback_data="run_monitoring")]
+                [InlineKeyboardButton("Settings ⚙️", callback_data="open_settings_submenu")],
+                [InlineKeyboardButton("🟢 Run", callback_data="run_monitoring")]
             ])
         else:
             footer = "Add some games to start monitoring."
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Settings", callback_data="open_settings_submenu")]
+                [InlineKeyboardButton("Settings ⚙️", callback_data="open_settings_submenu")]
             ])
     menu_text = SET_MENU_TEMPLATE.format(
         game_list_header=GAME_LIST_HEADER,
@@ -717,7 +751,10 @@ async def handle_incoming_private(client, message):
                 last_messages[user_id]["settings"],
                 text_to_show,
                 parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="back_to_main_menu")]])
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Next ▶️", callback_data="next_to_second_page")],
+                    [InlineKeyboardButton("◀️ Back", callback_data="back_to_main_menu")]
+                ])
             )
         except MessageNotModified:
             pass
