@@ -67,7 +67,7 @@ SETTINGS_SUBMENU_TEXT = (
     "<code>ltfavs</code> <b>- Lifetime favorited</b></blockquote>\n\n"
     "⚙️ <b>Operators:</b> [ <code>></code>  ] <b>and</b> [ <code><</code>  ]\n"
     "📐 <b>Use</b> [ <code>kb</code>  ][ <code>mb</code>  ][ <code>gb</code>  ] <b>for size</b>\n\n"
-    "<b>PS: When you're done, press \"Back\":</b>"
+    "<b>To reset all filters, type:</b> <code>Reset</code>"
 )
 
 
@@ -368,6 +368,9 @@ async def next_to_second_page(client, callback_query):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("◀️ Back", callback_data="back_to_settings_submenu")]
     ])
+    if "user_mode" not in monitoring_users:
+        monitoring_users["user_mode"] = {}
+    monitoring_users["user_mode"][user_id] = "settings_submenu_page2"
     await callback_query.message.edit_text(
         text=text,
         parse_mode=ParseMode.HTML,
@@ -385,6 +388,7 @@ async def back_to_settings_submenu(client, callback_query):
         [InlineKeyboardButton("Next ▶️", callback_data="next_to_second_page")],
         [InlineKeyboardButton("◀️ Back", callback_data="back_to_main_menu")]
     ])
+    monitoring_users["user_mode"][user_id] = "settings_submenu"
     await callback_query.message.edit_text(
         text=text,
         parse_mode=ParseMode.HTML,
@@ -732,7 +736,30 @@ async def handle_incoming_private(client, message):
     user_id = message.from_user.id
     text = message.text.strip().lower()
     in_settings_submenu = ("user_mode" in monitoring_users and user_id in monitoring_users["user_mode"] and monitoring_users["user_mode"][user_id] == "settings_submenu")
-    if text.startswith("set ") and in_settings_submenu:
+    in_settings_submenu_page2 = ("user_mode" in monitoring_users and user_id in monitoring_users["user_mode"] and monitoring_users["user_mode"][user_id] == "settings_submenu_page2")
+    if in_settings_submenu and not in_settings_submenu_page2:
+        if text == "reset":
+            save_user_filters(user_id, {})
+            clear_user_items(user_id)
+            user_filters = get_user_filters(user_id)
+            current_filters_text = format_filters(user_filters)
+            text_to_show = SETTINGS_SUBMENU_TEXT.format(current_filters=current_filters_text)
+            await message.delete()
+            try:
+                await client.edit_message_text(
+                    user_id,
+                    last_messages[user_id]["settings"],
+                    text_to_show,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("Next ▶️", callback_data="next_to_second_page")],
+                        [InlineKeyboardButton("◀️ Back", callback_data="back_to_main_menu")]
+                    ])
+                )
+            except MessageNotModified:
+                pass
+            return
+    if text.startswith("set ") and in_settings_submenu and not in_settings_submenu_page2:
         parsed = parse_filter_command(text)
         await message.delete()
         if parsed is None:
