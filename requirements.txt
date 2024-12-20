@@ -1,3 +1,5 @@
-pyrogram @ git+https://github.com/KurimuzonAkuma/pyrogram.git@dev#egg=pyrogram
+pyrogram
+# For "blockquote" text formatting use:
+# pyrogram @ git+https://github.com/KurimuzonAkuma/pyrogram.git@dev#egg=pyrogram
 tgcrypto
 requests

@@ -84,108 +84,74 @@ app = Client("my_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
 last_messages = {}
 monitoring_users = {}
 
-USER_GAMES_FOLDER = "user_games"
-if not os.path.exists(USER_GAMES_FOLDER):
-    os.makedirs(USER_GAMES_FOLDER)
-
 USERS_FILE = "users.json"
+
 if not os.path.exists(USERS_FILE):
     with open(USERS_FILE, "w") as f:
-        json.dump([], f)
+        json.dump({"users": {}}, f)
 
 
-def load_known_users():
+def load_all_data():
     with open(USERS_FILE, "r") as f:
         return json.load(f)
 
 
-def save_known_users(users_list):
+def save_all_data(data):
     with open(USERS_FILE, "w") as f:
-        json.dump(users_list, f)
+        json.dump(data, f, indent=4)
+
+
+def get_user_data(user_id):
+    data = load_all_data()
+    users = data.get("users", {})
+    user_id_str = str(user_id)
+    if user_id_str not in users:
+        users[user_id_str] = {
+            "games": {},
+            "filters": {},
+            "known_items": {},
+            "last_items": {}
+        }
+        data["users"] = users
+        save_all_data(data)
+    return data, users[user_id_str]
+
+
+def save_user_data(user_id, user_data):
+    data = load_all_data()
+    data["users"][str(user_id)] = user_data
+    save_all_data(data)
 
 
 def user_is_known(user_id):
-    users_list = load_known_users()
-    return user_id in users_list
+    data = load_all_data()
+    return str(user_id) in data.get("users", {})
 
 
 def add_user_to_known(user_id):
-    users_list = load_known_users()
-    if user_id not in users_list:
-        users_list.append(user_id)
-        save_known_users(users_list)
-
-
-def get_user_dir(user_id):
-    path = os.path.join(USER_GAMES_FOLDER, str(user_id))
-    if not os.path.exists(path):
-        os.makedirs(path)
-    return path
-
-
-def get_user_games_file(user_id):
-    return os.path.join(get_user_dir(user_id), "games.json")
-
-
-def get_game_items_file(user_id, game_id):
-    return os.path.join(get_user_dir(user_id), f"{game_id}.json")
-
-
-def get_user_filters_file(user_id):
-    return os.path.join(get_user_dir(user_id), "filters.json")
+    _, _ = get_user_data(user_id)
 
 
 def load_games(user_id):
-    games_file = get_user_games_file(user_id)
-    try:
-        with open(games_file, "r") as file:
-            games = json.load(file)
-    except:
-        games = {}
-    return games
+    _, user_data = get_user_data(user_id)
+    return user_data.get("games", {})
 
 
 def save_games(user_id, games):
-    games_file = get_user_games_file(user_id)
-    try:
-        with open(games_file, "w") as file:
-            json.dump(games, file)
-    except:
-        pass
-
-
-def load_game_items_info(user_id, game_id):
-    path = get_game_items_file(user_id, game_id)
-    if not os.path.exists(path):
-        return {}
-    try:
-        with open(path, "r") as f:
-            return json.load(f)
-    except:
-        return {}
-
-
-def save_game_items_info(user_id, game_id, items_dict):
-    path = get_game_items_file(user_id, game_id)
-    with open(path, "w") as f:
-        json.dump(items_dict, f)
+    data, user_data = get_user_data(user_id)
+    user_data["games"] = games
+    save_user_data(user_id, user_data)
 
 
 def load_user_filters(user_id):
-    path = get_user_filters_file(user_id)
-    if not os.path.exists(path):
-        return {}
-    try:
-        with open(path, "r") as f:
-            return json.load(f)
-    except:
-        return {}
+    _, user_data = get_user_data(user_id)
+    return user_data.get("filters", {})
 
 
 def save_user_filters(user_id, filters_data):
-    path = get_user_filters_file(user_id)
-    with open(path, "w") as f:
-        json.dump(filters_data, f)
+    data, user_data = get_user_data(user_id)
+    user_data["filters"] = filters_data
+    save_user_data(user_id, user_data)
 
 
 def get_user_filters(user_id):
@@ -193,23 +159,45 @@ def get_user_filters(user_id):
 
 
 def set_user_filter(user_id, filter_name, filter_data):
-    uf = load_user_filters(user_id)
+    data, user_data = get_user_data(user_id)
+    filters = user_data.get("filters", {})
     if filter_data is None:
-        if filter_name in uf:
-            del uf[filter_name]
+        if filter_name in filters:
+            del filters[filter_name]
     else:
-        uf[filter_name] = filter_data
-    save_user_filters(user_id, uf)
-    clear_user_items(user_id)
+        filters[filter_name] = filter_data
+    user_data["filters"] = filters
+    user_data["known_items"] = {}
+    user_data["last_items"] = {}
+    save_user_data(user_id, user_data)
 
 
-def clear_user_items(user_id):
-    user_dir = get_user_dir(user_id)
-    for filename in os.listdir(user_dir):
-        if filename.endswith(".json") and filename != "games.json" and filename != "filters.json":
-            path = os.path.join(user_dir, filename)
-            with open(path, "w") as f:
-                json.dump({}, f)
+def load_game_items_info(user_id, game_id):
+    _, user_data = get_user_data(user_id)
+    known_items = user_data.get("known_items", {})
+    return known_items.get(game_id, {})
+
+
+def save_game_items_info(user_id, game_id, items_dict):
+    data, user_data = get_user_data(user_id)
+    known_items = user_data.get("known_items", {})
+    known_items[game_id] = items_dict
+    user_data["known_items"] = known_items
+    save_user_data(user_id, user_data)
+
+
+def get_last_publishedfileid(user_id, game_id):
+    _, user_data = get_user_data(user_id)
+    last_items = user_data.get("last_items", {})
+    return last_items.get(game_id)
+
+
+def set_last_publishedfileid(user_id, game_id, file_id):
+    data, user_data = get_user_data(user_id)
+    last_items = user_data.get("last_items", {})
+    last_items[game_id] = file_id
+    user_data["last_items"] = last_items
+    save_user_data(user_id, user_data)
 
 
 def format_filters(filters_dict):
@@ -475,8 +463,7 @@ async def run_monitoring_callback(client, callback_query: CallbackQuery):
         await callback_query.answer(MONITORING_NO_GAMES, show_alert=True)
         return
     monitoring_users[user_id] = {
-        "task": asyncio.create_task(monitor_workshops(client, user_id)),
-        "last_items": {}
+        "task": asyncio.create_task(monitor_workshops(client, user_id))
     }
     await callback_query.answer(MONITORING_STARTED, show_alert=True)
     game_list = '\n'.join([f'[ <code>{g_id}</code> ] - {g_name}' for g_id, g_name in steam_games.items()]) or GAME_LIST_EMPTY
@@ -607,6 +594,17 @@ async def remove_game(client, message):
         if game_id in steam_games:
             removed_game = steam_games.pop(game_id)
             save_games(user_id, steam_games)
+            data, user_data = get_user_data(user_id)
+            known_items = user_data.get("known_items", {})
+            if game_id in known_items:
+                del known_items[game_id]
+            last_items = user_data.get("last_items", {})
+            if game_id in last_items:
+                del last_items[game_id]
+            user_data["known_items"] = known_items
+            user_data["last_items"] = last_items
+            save_user_data(user_id, user_data)
+
             response_text = REMOVE_GAME_SUCCESS.format(game_id=game_id, game_name=removed_game)
         else:
             response_text = REMOVE_GAME_NOT_FOUND.format(game_id=game_id)
@@ -614,28 +612,19 @@ async def remove_game(client, message):
 
 
 async def monitor_workshops(client, user_id):
-    last_items = monitoring_users[user_id]["last_items"]
     try:
         while user_id in monitoring_users and "task" in monitoring_users[user_id]:
             steam_games = load_games(user_id)
             for game_id, game_name in steam_games.items():
-                first_run = (game_id not in last_items)
-                new_items = await get_new_workshop_items(game_id, last_items.get(game_id))
+                last_publishedfileid = get_last_publishedfileid(user_id, game_id)
+                new_items = await get_new_workshop_items(game_id, last_publishedfileid)
                 known_items = load_game_items_info(user_id, game_id)
-                if not first_run and new_items:
+                if new_items:
+                    set_last_publishedfileid(user_id, game_id, new_items[0]['publishedfileid'])
+                    first = True if last_publishedfileid is None else False
                     for item in new_items:
-                        await process_and_send_item(known_items, user_id, game_id, game_name, item, client, True)
-                    last_items[game_id] = new_items[0]['publishedfileid']
-                    save_game_items_info(user_id, game_id, known_items)
-                elif first_run and new_items:
-                    first = True
-                    for item in new_items:
-                        if first:
-                            await process_and_send_item(known_items, user_id, game_id, game_name, item, client, True)
-                            first = False
-                        else:
-                            await process_and_send_item(known_items, user_id, game_id, game_name, item, client, False)
-                    last_items[game_id] = new_items[0]['publishedfileid']
+                        await process_and_send_item(known_items, user_id, game_id, game_name, item, client, True if first else True)
+                        first = False
                     save_game_items_info(user_id, game_id, known_items)
             await asyncio.sleep(10)
     except asyncio.CancelledError:
@@ -689,7 +678,7 @@ async def process_and_send_item(known_items, user_id, game_id, game_name, item, 
     old_time = known_items.get(publishedfileid, 0)
     if time_updated > old_time:
         known_items[publishedfileid] = time_updated
-        while len(known_items) > 1000:
+        while len(known_items) > 100:
             oldest_item_id = min(known_items, key=known_items.get)
             if oldest_item_id != publishedfileid:
                 del known_items[oldest_item_id]
@@ -740,7 +729,11 @@ async def handle_incoming_private(client, message):
     if in_settings_submenu and not in_settings_submenu_page2:
         if text == "reset":
             save_user_filters(user_id, {})
-            clear_user_items(user_id)
+            data, user_data = get_user_data(user_id)
+            user_data["known_items"] = {}
+            user_data["last_items"] = {}
+            save_user_data(user_id, user_data)
+
             user_filters = get_user_filters(user_id)
             current_filters_text = format_filters(user_filters)
             text_to_show = SETTINGS_SUBMENU_TEXT.format(current_filters=current_filters_text)
