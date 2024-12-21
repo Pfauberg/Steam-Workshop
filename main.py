@@ -191,13 +191,13 @@ def save_user_filters_new(user_id, filters_data):
 
 def set_user_filter_updated(user_id, filter_name, filter_data):
     data, user_data = get_user_data(user_id)
-    filters = user_data.get("filters_updated", {})
+    f = user_data.get("filters_updated", {})
     if filter_data is None:
-        if filter_name in filters:
-            del filters[filter_name]
+        if filter_name in f:
+            del f[filter_name]
     else:
-        filters[filter_name] = filter_data
-    user_data["filters_updated"] = filters
+        f[filter_name] = filter_data
+    user_data["filters_updated"] = f
     user_data["known_items"] = {}
     user_data["last_items"] = {}
     save_user_data(user_id, user_data)
@@ -205,13 +205,13 @@ def set_user_filter_updated(user_id, filter_name, filter_data):
 
 def set_user_filter_new(user_id, filter_name, filter_data):
     data, user_data = get_user_data(user_id)
-    filters = user_data.get("filters_new", {})
+    f = user_data.get("filters_new", {})
     if filter_data is None:
-        if filter_name in filters:
-            del filters[filter_name]
+        if filter_name in f:
+            del f[filter_name]
     else:
-        filters[filter_name] = filter_data
-    user_data["filters_new"] = filters
+        f[filter_name] = filter_data
+    user_data["filters_new"] = f
     user_data["known_items_new"] = {}
     user_data["last_items_new"] = {}
     save_user_data(user_id, user_data)
@@ -219,8 +219,7 @@ def set_user_filter_new(user_id, filter_name, filter_data):
 
 def load_game_items_info(user_id, game_id):
     _, user_data = get_user_data(user_id)
-    known_items = user_data.get("known_items", {})
-    return known_items.get(game_id, {})
+    return user_data.get("known_items", {}).get(game_id, {})
 
 
 def save_game_items_info(user_id, game_id, items_dict):
@@ -233,8 +232,7 @@ def save_game_items_info(user_id, game_id, items_dict):
 
 def load_game_items_info_new(user_id, game_id):
     _, user_data = get_user_data(user_id)
-    known_items_new = user_data.get("known_items_new", {})
-    return known_items_new.get(game_id, {})
+    return user_data.get("known_items_new", {}).get(game_id, {})
 
 
 def save_game_items_info_new(user_id, game_id, items_dict):
@@ -247,8 +245,7 @@ def save_game_items_info_new(user_id, game_id, items_dict):
 
 def get_last_publishedfileid(user_id, game_id):
     _, user_data = get_user_data(user_id)
-    last_items = user_data.get("last_items", {})
-    return last_items.get(game_id)
+    return user_data.get("last_items", {}).get(game_id)
 
 
 def set_last_publishedfileid(user_id, game_id, file_id):
@@ -261,8 +258,7 @@ def set_last_publishedfileid(user_id, game_id, file_id):
 
 def get_last_publishedfileid_new(user_id, game_id):
     _, user_data = get_user_data(user_id)
-    last_items_new = user_data.get("last_items_new", {})
-    return last_items_new.get(game_id)
+    return user_data.get("last_items_new", {}).get(game_id)
 
 
 def set_last_publishedfileid_new(user_id, game_id, file_id):
@@ -285,46 +281,46 @@ def save_user_runtime_data(user_id, runtime_data):
 
 
 def get_last_message_id(user_id, command):
-    runtime = get_user_runtime_data(user_id)
-    lm = runtime.setdefault("last_messages", {})
+    r = get_user_runtime_data(user_id)
+    lm = r.setdefault("last_messages", {})
     return lm.get(command)
 
 
 def set_last_message_id(user_id, command, msg_id):
-    runtime = get_user_runtime_data(user_id)
-    lm = runtime.setdefault("last_messages", {})
+    r = get_user_runtime_data(user_id)
+    lm = r.setdefault("last_messages", {})
     lm[command] = msg_id
-    save_user_runtime_data(user_id, runtime)
+    save_user_runtime_data(user_id, r)
 
 
 def delete_last_message_id(user_id, command):
-    runtime = get_user_runtime_data(user_id)
-    lm = runtime.setdefault("last_messages", {})
+    r = get_user_runtime_data(user_id)
+    lm = r.setdefault("last_messages", {})
     if command in lm:
         del lm[command]
-    save_user_runtime_data(user_id, runtime)
+    save_user_runtime_data(user_id, r)
 
 
 def set_user_mode(user_id, mode):
-    runtime = get_user_runtime_data(user_id)
-    runtime["user_mode"] = mode
-    save_user_runtime_data(user_id, runtime)
+    r = get_user_runtime_data(user_id)
+    r["user_mode"] = mode
+    save_user_runtime_data(user_id, r)
 
 
 def get_user_mode(user_id):
-    runtime = get_user_runtime_data(user_id)
-    return runtime.get("user_mode", None)
+    r = get_user_runtime_data(user_id)
+    return r.get("user_mode", None)
 
 
 def set_monitoring_status(user_id, status_bool):
-    runtime = get_user_runtime_data(user_id)
-    runtime["is_monitoring"] = status_bool
-    save_user_runtime_data(user_id, runtime)
+    r = get_user_runtime_data(user_id)
+    r["is_monitoring"] = status_bool
+    save_user_runtime_data(user_id, r)
 
 
 def is_user_monitoring(user_id):
-    runtime = get_user_runtime_data(user_id)
-    return runtime.get("is_monitoring", False)
+    r = get_user_runtime_data(user_id)
+    return r.get("is_monitoring", False)
 
 
 def format_filters(filters_dict):
@@ -599,64 +595,51 @@ async def stop_monitoring_callback(client, callback_query: CallbackQuery):
 async def open_settings_submenu_callback(client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
     await callback_query.answer()
-    set_user_mode(user_id, "settings_submenu_page1")
-    text = "<b>Settings Page (1/3)</b>\n\nEmpty page. Press Next to continue."
+    set_user_mode(user_id, "settings_submenu_main")
+    text = "<b>Settings Menu</b>\n\nChoose which filters you want to configure."
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Next ▶️", callback_data="next_to_page2")],
+        [InlineKeyboardButton("Last Updated", callback_data="open_settings_submenu_updated")],
+        [InlineKeyboardButton("Most Recent", callback_data="open_settings_submenu_new")],
         [InlineKeyboardButton("◀️ Back", callback_data="back_to_main_menu")]
     ])
     await callback_query.message.edit_text(text=text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
-@app.on_callback_query(filters.regex("^next_to_page2$"))
-async def next_to_page2(client, callback_query: CallbackQuery):
+@app.on_callback_query(filters.regex("^open_settings_submenu_updated$"))
+async def open_settings_submenu_updated(client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
-    set_user_mode(user_id, "settings_submenu_page2")
-    f = load_user_filters_updated(user_id)
-    ft = format_filters(f)
-    text = SETTINGS_SUBMENU_TEXT_UPDATED.format(current_filters=ft)
+    set_user_mode(user_id, "settings_submenu_updated")
+    filters_upd = load_user_filters_updated(user_id)
+    current_filters_text = format_filters(filters_upd)
+    text = SETTINGS_SUBMENU_TEXT_UPDATED.format(current_filters=current_filters_text)
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Next ▶️", callback_data="next_to_page3")],
-        [InlineKeyboardButton("◀️ Back", callback_data="back_to_page1")]
+        [InlineKeyboardButton("◀️ Back", callback_data="back_to_settings_main")]
     ])
     await callback_query.message.edit_text(text=text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
-@app.on_callback_query(filters.regex("^back_to_page1$"))
-async def back_to_page1(client, callback_query: CallbackQuery):
+@app.on_callback_query(filters.regex("^open_settings_submenu_new$"))
+async def open_settings_submenu_new(client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
-    set_user_mode(user_id, "settings_submenu_page1")
-    t = "<b>Settings Page (1/3)</b>\n\nEmpty page. Press Next to continue."
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Next ▶️", callback_data="next_to_page2")],
-        [InlineKeyboardButton("◀️ Back", callback_data="back_to_main_menu")]
-    ])
-    await callback_query.message.edit_text(text=t, parse_mode=ParseMode.HTML, reply_markup=kb)
-
-
-@app.on_callback_query(filters.regex("^next_to_page3$"))
-async def next_to_page3(client, callback_query: CallbackQuery):
-    user_id = callback_query.from_user.id
-    set_user_mode(user_id, "settings_submenu_page3")
-    filters_new = load_user_filters_new(user_id)
-    current_filters_text = format_filters(filters_new)
+    set_user_mode(user_id, "settings_submenu_new")
+    filters_n = load_user_filters_new(user_id)
+    current_filters_text = format_filters(filters_n)
     text = SETTINGS_SUBMENU_TEXT_NEW.format(current_filters=current_filters_text)
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("◀️ Back", callback_data="back_to_page2")]
+        [InlineKeyboardButton("◀️ Back", callback_data="back_to_settings_main")]
     ])
     await callback_query.message.edit_text(text=text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
-@app.on_callback_query(filters.regex("^back_to_page2$"))
-async def back_to_page2_callback(client, callback_query: CallbackQuery):
+@app.on_callback_query(filters.regex("^back_to_settings_main$"))
+async def back_to_settings_main(client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
-    set_user_mode(user_id, "settings_submenu_page2")
-    f = load_user_filters_updated(user_id)
-    ft = format_filters(f)
-    text = SETTINGS_SUBMENU_TEXT_UPDATED.format(current_filters=ft)
+    set_user_mode(user_id, "settings_submenu_main")
+    text = "<b>Settings Menu</b>\n\nChoose which filters you want to configure."
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Next ▶️", callback_data="next_to_page3")],
-        [InlineKeyboardButton("◀️ Back", callback_data="back_to_page1")]
+        [InlineKeyboardButton("Last Updated", callback_data="open_settings_submenu_updated")],
+        [InlineKeyboardButton("Most Recent", callback_data="open_settings_submenu_new")],
+        [InlineKeyboardButton("◀️ Back", callback_data="back_to_main_menu")]
     ])
     await callback_query.message.edit_text(text=text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
@@ -794,8 +777,8 @@ async def monitor_workshops(client, user_id):
                     set_last_publishedfileid_new(user_id, gid, new_new[0]['publishedfileid'])
                 known_items = load_game_items_info(user_id, gid)
                 known_items_new = load_game_items_info_new(user_id, gid)
-                first_updated = True if last_upd is None else False
-                first_new = True if last_new is None else False
+                first_updated = (last_upd is None)
+                first_new = (last_new is None)
                 for it in new_updated:
                     await process_and_send_item(known_items, user_id, gid, gname, it, client, not first_updated, "updated")
                 save_game_items_info(user_id, gid, known_items)
@@ -885,10 +868,7 @@ async def process_and_send_item_new(known_items_new, user_id, gid, gname, item, 
 
 
 async def send_workshop_item(client, user_id, gname, item, t):
-    if t == "updated":
-        itype = " (updated)"
-    else:
-        itype = " (new)"
+    itype = " (updated)" if (t == "updated") else " (new)"
     ttl = item.get('title', 'No Title')
     fsb = int(item.get('file_size', 0))
     fs = "N/A"
@@ -925,7 +905,7 @@ async def handle_incoming_private(client, message):
     user_id = message.from_user.id
     txt = message.text.strip().lower()
     mode = get_user_mode(user_id)
-    if mode == "settings_submenu_page2":
+    if mode == "settings_submenu_updated":
         if txt == "reset":
             save_user_filters_updated(user_id, {})
             data, user_data = get_user_data(user_id)
@@ -943,8 +923,7 @@ async def handle_incoming_private(client, message):
                     show_txt,
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("Next ▶️", callback_data="next_to_page3")],
-                        [InlineKeyboardButton("◀️ Back", callback_data="back_to_page1")]
+                        [InlineKeyboardButton("◀️ Back", callback_data="back_to_settings_main")]
                     ])
                 )
             except MessageNotModified:
@@ -970,14 +949,13 @@ async def handle_incoming_private(client, message):
                     show_txt,
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("Next ▶️", callback_data="next_to_page3")],
-                        [InlineKeyboardButton("◀️ Back", callback_data="back_to_page1")]
+                        [InlineKeyboardButton("◀️ Back", callback_data="back_to_settings_main")]
                     ])
                 )
             except MessageNotModified:
                 pass
             return
-    if mode == "settings_submenu_page3":
+    if mode == "settings_submenu_new":
         if txt == "reset":
             save_user_filters_new(user_id, {})
             data, user_data = get_user_data(user_id)
@@ -995,7 +973,7 @@ async def handle_incoming_private(client, message):
                     show_txt,
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("◀️ Back", callback_data="back_to_page2")]
+                        [InlineKeyboardButton("◀️ Back", callback_data="back_to_settings_main")]
                     ])
                 )
             except MessageNotModified:
@@ -1021,7 +999,7 @@ async def handle_incoming_private(client, message):
                     show_txt,
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("◀️ Back", callback_data="back_to_page2")]
+                        [InlineKeyboardButton("◀️ Back", callback_data="back_to_settings_main")]
                     ])
                 )
             except MessageNotModified:
