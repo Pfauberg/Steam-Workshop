@@ -14,7 +14,6 @@ GAME_LIST_HEADER = "<b>Steam games list:</b>"
 GAME_LIST_EMPTY = "No games added yet."
 ADD_GAME_USAGE = "To add a game, type: <code>Add GAME_ID</code> or <code>Add URL</code>"
 REMOVE_GAME_USAGE = "To remove a game, type: <code>Rm GAME_ID</code>"
-SET_MENU_FOOTER = ""
 
 ADD_GAME_SUCCESS = "Game [ <code>{game_id}</code> ] - <b>\"{game_name}\"</b> has been added to your list."
 ADD_GAME_DUPLICATE = "Game [ <code>{game_id}</code> ] - <b>\"{game_name}\"</b> is already in your list."
@@ -81,8 +80,7 @@ steam_api_key = config["steam"]["STEAM_API_KEY"].strip('"')
 
 app = Client("my_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
 
-last_messages = {}
-monitoring_users = {}
+running_tasks = {}
 
 USERS_FILE = "users.json"
 
@@ -110,7 +108,12 @@ def get_user_data(user_id):
             "games": {},
             "filters": {},
             "known_items": {},
-            "last_items": {}
+            "last_items": {},
+            "runtime": {
+                "is_monitoring": False,
+                "last_messages": {},
+                "user_mode": None
+            }
         }
         data["users"] = users
         save_all_data(data)
@@ -200,6 +203,60 @@ def set_last_publishedfileid(user_id, game_id, file_id):
     save_user_data(user_id, user_data)
 
 
+def get_user_runtime_data(user_id):
+    _, user_data = get_user_data(user_id)
+    return user_data.setdefault("runtime", {})
+
+
+def save_user_runtime_data(user_id, runtime_data):
+    data, user_data = get_user_data(user_id)
+    user_data["runtime"] = runtime_data
+    save_user_data(user_id, user_data)
+
+
+def get_last_message_id(user_id, command):
+    runtime = get_user_runtime_data(user_id)
+    lm = runtime.setdefault("last_messages", {})
+    return lm.get(command)
+
+
+def set_last_message_id(user_id, command, msg_id):
+    runtime = get_user_runtime_data(user_id)
+    lm = runtime.setdefault("last_messages", {})
+    lm[command] = msg_id
+    save_user_runtime_data(user_id, runtime)
+
+
+def delete_last_message_id(user_id, command):
+    runtime = get_user_runtime_data(user_id)
+    lm = runtime.setdefault("last_messages", {})
+    if command in lm:
+        del lm[command]
+    save_user_runtime_data(user_id, runtime)
+
+
+def set_user_mode(user_id, mode):
+    runtime = get_user_runtime_data(user_id)
+    runtime["user_mode"] = mode
+    save_user_runtime_data(user_id, runtime)
+
+
+def get_user_mode(user_id):
+    runtime = get_user_runtime_data(user_id)
+    return runtime.get("user_mode", None)
+
+
+def set_monitoring_status(user_id, status_bool: bool):
+    runtime = get_user_runtime_data(user_id)
+    runtime["is_monitoring"] = status_bool
+    save_user_runtime_data(user_id, runtime)
+
+
+def is_user_monitoring(user_id):
+    runtime = get_user_runtime_data(user_id)
+    return runtime.get("is_monitoring", False)
+
+
 def format_filters(filters_dict):
     if not filters_dict:
         return "No filters set."
@@ -246,7 +303,7 @@ def parse_filter_command(command_str):
         op = f_cond[0]
         val_str = f_cond[1:].strip()
         if f_name == "size":
-            if not re.match(r"^\d+(\.\d{1,2})?(kb|mb|gb)$", val_str, re.IGNORECASE):
+            if not re.match(r"^\d+(\.\d{1,2})?(kb|mb|gb)?$", val_str, re.IGNORECASE):
                 return None
             try:
                 value = parse_size(val_str)
@@ -293,12 +350,13 @@ def check_filters(user_id, item):
 
 
 async def delete_last_message(user_id, command, client, chat_id):
-    if user_id in last_messages and command in last_messages[user_id]:
+    msg_id = get_last_message_id(user_id, command)
+    if msg_id:
         try:
-            await client.delete_messages(chat_id=chat_id, message_ids=last_messages[user_id][command])
-            del last_messages[user_id][command]
+            await client.delete_messages(chat_id=chat_id, message_ids=msg_id)
         except:
             pass
+        delete_last_message_id(user_id, command)
 
 
 def extract_game_id(input_str):
@@ -314,7 +372,7 @@ def extract_game_id(input_str):
 async def show_settings_menu(client, user_id, message=None, text_prefix=""):
     steam_games = load_games(user_id)
     game_list = "\n".join([f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]) or GAME_LIST_EMPTY
-    if user_id in monitoring_users and "task" in monitoring_users[user_id]:
+    if is_user_monitoring(user_id):
         footer = "Monitoring is running."
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop 🔴", callback_data="stop_monitoring")]])
     else:
@@ -344,9 +402,7 @@ async def show_settings_menu(client, user_id, message=None, text_prefix=""):
         chat_id = user_id
         await delete_last_message(user_id, "settings", client, chat_id)
         sent_message = await client.send_message(chat_id, full_text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
-    if user_id not in last_messages:
-        last_messages[user_id] = {}
-    last_messages[user_id]["settings"] = sent_message.id
+    set_last_message_id(user_id, "settings", sent_message.id)
 
 
 @app.on_callback_query(filters.regex("^next_to_second_page$"))
@@ -356,9 +412,7 @@ async def next_to_second_page(client, callback_query):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("◀️ Back", callback_data="back_to_settings_submenu")]
     ])
-    if "user_mode" not in monitoring_users:
-        monitoring_users["user_mode"] = {}
-    monitoring_users["user_mode"][user_id] = "settings_submenu_page2"
+    set_user_mode(user_id, "settings_submenu_page2")
     await callback_query.message.edit_text(
         text=text,
         parse_mode=ParseMode.HTML,
@@ -376,7 +430,7 @@ async def back_to_settings_submenu(client, callback_query):
         [InlineKeyboardButton("Next ▶️", callback_data="next_to_second_page")],
         [InlineKeyboardButton("◀️ Back", callback_data="back_to_main_menu")]
     ])
-    monitoring_users["user_mode"][user_id] = "settings_submenu"
+    set_user_mode(user_id, "settings_submenu")
     await callback_query.message.edit_text(
         text=text,
         parse_mode=ParseMode.HTML,
@@ -392,6 +446,7 @@ async def show_settings_submenu(client, user_id, callback_query):
         [InlineKeyboardButton("Next ▶️", callback_data="next_to_second_page")],
         [InlineKeyboardButton("◀️ Back", callback_data="back_to_main_menu")]
     ])
+    set_user_mode(user_id, "settings_submenu")
     await callback_query.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
 
 
@@ -442,6 +497,8 @@ async def start(client, message):
     if not user_is_known(user_id):
         await client.send_message(user_id, WELCOME_MESSAGE)
         add_user_to_known(user_id)
+    if is_user_monitoring(user_id) and user_id not in running_tasks:
+        running_tasks[user_id] = asyncio.create_task(monitor_workshops(client, user_id))
     await show_settings_menu(client, user_id, message)
 
 
@@ -455,16 +512,15 @@ async def help_command(client, message):
 @app.on_callback_query(filters.regex("^run_monitoring$"))
 async def run_monitoring_callback(client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
-    if user_id in monitoring_users and "task" in monitoring_users[user_id]:
+    if user_id in running_tasks:
         await callback_query.answer(MONITORING_ALREADY_RUNNING, show_alert=True)
         return
     steam_games = load_games(user_id)
     if not steam_games:
         await callback_query.answer(MONITORING_NO_GAMES, show_alert=True)
         return
-    monitoring_users[user_id] = {
-        "task": asyncio.create_task(monitor_workshops(client, user_id))
-    }
+    running_tasks[user_id] = asyncio.create_task(monitor_workshops(client, user_id))
+    set_monitoring_status(user_id, True)
     await callback_query.answer(MONITORING_STARTED, show_alert=True)
     game_list = '\n'.join([f'[ <code>{g_id}</code> ] - {g_name}' for g_id, g_name in steam_games.items()]) or GAME_LIST_EMPTY
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop 🔴", callback_data="stop_monitoring")]])
@@ -480,11 +536,13 @@ async def run_monitoring_callback(client, callback_query: CallbackQuery):
 @app.on_callback_query(filters.regex("^stop_monitoring$"))
 async def stop_monitoring_callback(client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
-    if user_id not in monitoring_users or "task" not in monitoring_users[user_id]:
+    if user_id not in running_tasks:
+        set_monitoring_status(user_id, False)
         await callback_query.answer(MONITORING_NOT_RUNNING, show_alert=True)
         return
-    monitoring_users[user_id]["task"].cancel()
-    del monitoring_users[user_id]
+    running_tasks[user_id].cancel()
+    del running_tasks[user_id]
+    set_monitoring_status(user_id, False)
     await callback_query.answer(MONITORING_STOPPED, show_alert=True)
     await show_settings_menu(client, user_id, callback_query.message)
 
@@ -493,9 +551,7 @@ async def stop_monitoring_callback(client, callback_query: CallbackQuery):
 async def open_settings_submenu_callback(client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
     await callback_query.answer()
-    if "user_mode" not in monitoring_users:
-        monitoring_users["user_mode"] = {}
-    monitoring_users["user_mode"][user_id] = "settings_submenu"
+    set_user_mode(user_id, "settings_submenu")
     await show_settings_submenu(client, user_id, callback_query)
 
 
@@ -503,11 +559,10 @@ async def open_settings_submenu_callback(client, callback_query: CallbackQuery):
 async def back_to_main_menu_callback(client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
     await callback_query.answer()
-    if "user_mode" in monitoring_users and user_id in monitoring_users["user_mode"]:
-        del monitoring_users["user_mode"][user_id]
+    set_user_mode(user_id, None)
     steam_games = load_games(user_id)
     game_list = "\n".join([f"[ <code>{game_id}</code> ] - {game_name}" for game_id, game_name in steam_games.items()]) or GAME_LIST_EMPTY
-    if user_id in monitoring_users and "task" in monitoring_users[user_id]:
+    if is_user_monitoring(user_id):
         footer = "Monitoring is running."
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Stop 🔴", callback_data="stop_monitoring")]])
     else:
@@ -535,7 +590,7 @@ async def back_to_main_menu_callback(client, callback_query: CallbackQuery):
 @app.on_message(filters.private & filters.regex(r"(?i)^add\s+"))
 async def add_game(client, message):
     user_id = message.from_user.id
-    if user_id in monitoring_users and "task" in monitoring_users[user_id]:
+    if is_user_monitoring(user_id):
         await message.delete()
         warning_msg = await message.reply(SET_DISABLED_DURING_MONITORING, parse_mode=ParseMode.HTML)
         await show_settings_menu(client, user_id)
@@ -577,7 +632,7 @@ async def add_game(client, message):
 @app.on_message(filters.private & filters.regex(r"(?i)^rm\s\d+$"))
 async def remove_game(client, message):
     user_id = message.from_user.id
-    if user_id in monitoring_users and "task" in monitoring_users[user_id]:
+    if is_user_monitoring(user_id):
         await message.delete()
         warning_msg = await message.reply(SET_DISABLED_DURING_MONITORING, parse_mode=ParseMode.HTML)
         await show_settings_menu(client, user_id)
@@ -604,7 +659,6 @@ async def remove_game(client, message):
             user_data["known_items"] = known_items
             user_data["last_items"] = last_items
             save_user_data(user_id, user_data)
-
             response_text = REMOVE_GAME_SUCCESS.format(game_id=game_id, game_name=removed_game)
         else:
             response_text = REMOVE_GAME_NOT_FOUND.format(game_id=game_id)
@@ -613,7 +667,9 @@ async def remove_game(client, message):
 
 async def monitor_workshops(client, user_id):
     try:
-        while user_id in monitoring_users and "task" in monitoring_users[user_id]:
+        while True:
+            if not is_user_monitoring(user_id):
+                break
             steam_games = load_games(user_id)
             for game_id, game_name in steam_games.items():
                 last_publishedfileid = get_last_publishedfileid(user_id, game_id)
@@ -623,14 +679,17 @@ async def monitor_workshops(client, user_id):
                     set_last_publishedfileid(user_id, game_id, new_items[0]['publishedfileid'])
                     first = True if last_publishedfileid is None else False
                     for item in new_items:
-                        await process_and_send_item(known_items, user_id, game_id, game_name, item, client, True if first else True)
-                        first = False
+                        await process_and_send_item(known_items, user_id, game_id, game_name, item, client, first)
                     save_game_items_info(user_id, game_id, known_items)
             await asyncio.sleep(10)
     except asyncio.CancelledError:
         pass
-    except:
-        pass
+    except Exception as e:
+        print("monitor_workshops error:", e)
+    finally:
+        set_monitoring_status(user_id, False)
+        if user_id in running_tasks:
+            del running_tasks[user_id]
 
 
 async def get_new_workshop_items(game_id, last_publishedfileid):
@@ -724,8 +783,9 @@ async def send_workshop_item(client, user_id, game_name, item):
 async def handle_incoming_private(client, message):
     user_id = message.from_user.id
     text = message.text.strip().lower()
-    in_settings_submenu = ("user_mode" in monitoring_users and user_id in monitoring_users["user_mode"] and monitoring_users["user_mode"][user_id] == "settings_submenu")
-    in_settings_submenu_page2 = ("user_mode" in monitoring_users and user_id in monitoring_users["user_mode"] and monitoring_users["user_mode"][user_id] == "settings_submenu_page2")
+    user_mode = get_user_mode(user_id)
+    in_settings_submenu = (user_mode == "settings_submenu")
+    in_settings_submenu_page2 = (user_mode == "settings_submenu_page2")
     if in_settings_submenu and not in_settings_submenu_page2:
         if text == "reset":
             save_user_filters(user_id, {})
@@ -733,7 +793,6 @@ async def handle_incoming_private(client, message):
             user_data["known_items"] = {}
             user_data["last_items"] = {}
             save_user_data(user_id, user_data)
-
             user_filters = get_user_filters(user_id)
             current_filters_text = format_filters(user_filters)
             text_to_show = SETTINGS_SUBMENU_TEXT.format(current_filters=current_filters_text)
@@ -741,7 +800,7 @@ async def handle_incoming_private(client, message):
             try:
                 await client.edit_message_text(
                     user_id,
-                    last_messages[user_id]["settings"],
+                    get_last_message_id(user_id, "settings"),
                     text_to_show,
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
@@ -752,34 +811,34 @@ async def handle_incoming_private(client, message):
             except MessageNotModified:
                 pass
             return
-    if text.startswith("set ") and in_settings_submenu and not in_settings_submenu_page2:
-        parsed = parse_filter_command(text)
-        await message.delete()
-        if parsed is None:
+        if text.startswith("set "):
+            parsed = parse_filter_command(text)
+            await message.delete()
+            if parsed is None:
+                return
+            f_name, f_data = parsed
+            valid_filters = ["size", "subs", "favs", "ltsubs", "ltfavs"]
+            if f_name not in valid_filters:
+                return
+            set_user_filter(user_id, f_name, f_data)
+            user_filters = get_user_filters(user_id)
+            current_filters_text = format_filters(user_filters)
+            text_to_show = SETTINGS_SUBMENU_TEXT.format(current_filters=current_filters_text)
+            try:
+                await client.edit_message_text(
+                    user_id,
+                    get_last_message_id(user_id, "settings"),
+                    text_to_show,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("Next ▶️", callback_data="next_to_second_page")],
+                        [InlineKeyboardButton("◀️ Back", callback_data="back_to_main_menu")]
+                    ])
+                )
+            except MessageNotModified:
+                pass
             return
-        f_name, f_data = parsed
-        valid_filters = ["size", "subs", "favs", "ltsubs", "ltfavs"]
-        if f_name not in valid_filters:
-            return
-        set_user_filter(user_id, f_name, f_data)
-        user_filters = get_user_filters(user_id)
-        current_filters_text = format_filters(user_filters)
-        text_to_show = SETTINGS_SUBMENU_TEXT.format(current_filters=current_filters_text)
-        try:
-            await client.edit_message_text(
-                user_id,
-                last_messages[user_id]["settings"],
-                text_to_show,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Next ▶️", callback_data="next_to_second_page")],
-                    [InlineKeyboardButton("◀️ Back", callback_data="back_to_main_menu")]
-                ])
-            )
-        except MessageNotModified:
-            pass
-    else:
-        await message.delete()
+    await message.delete()
 
 
 if __name__ == "__main__":
