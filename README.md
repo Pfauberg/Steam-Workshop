@@ -13,13 +13,8 @@ A Telegram bot for monitoring updates in the Steam Workshop for selected games. 
 ## **🛠️ Development Stage**
 
 ### **✅ Implemented:**
-- Real-time monitoring of Steam Workshop updates.
+- Real-time monitoring of Steam Workshop updated and added items.
 - User-specific games and Workshop items storage.
 - Notifications with key item details.
 - Navigation buttons for easier menu interaction.
 - Filters for updates based on specific parameters.
-
-### **✨ Planned:**
-- Like/Dislike system for managing favorites and blacklist items.
-- Enable/Disable function for filtering non-Latin symbols in item names.
-- "Most recent" Workshop items (not only "last updated").

@@ -133,7 +133,9 @@ def get_user_data(user_id):
             "runtime": {
                 "is_monitoring": False,
                 "last_messages": {},
-                "user_mode": None
+                "user_mode": None,
+                "send_updated_enabled": True,
+                "send_new_enabled": True
             }
         }
         data["users"] = users
@@ -321,6 +323,28 @@ def set_monitoring_status(user_id, status_bool):
 def is_user_monitoring(user_id):
     r = get_user_runtime_data(user_id)
     return r.get("is_monitoring", False)
+
+
+def get_send_updated_enabled(user_id):
+    r = get_user_runtime_data(user_id)
+    return r.get("send_updated_enabled", True)
+
+
+def set_send_updated_enabled(user_id, status):
+    r = get_user_runtime_data(user_id)
+    r["send_updated_enabled"] = status
+    save_user_runtime_data(user_id, r)
+
+
+def get_send_new_enabled(user_id):
+    r = get_user_runtime_data(user_id)
+    return r.get("send_new_enabled", True)
+
+
+def set_send_new_enabled(user_id, status):
+    r = get_user_runtime_data(user_id)
+    r["send_new_enabled"] = status
+    save_user_runtime_data(user_id, r)
 
 
 def format_filters(filters_dict):
@@ -598,8 +622,8 @@ async def open_settings_submenu_callback(client, callback_query: CallbackQuery):
     set_user_mode(user_id, "settings_submenu_main")
     text = "<b>Settings Menu</b>\n\nChoose which filters you want to configure."
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Last Updated", callback_data="open_settings_submenu_updated")],
-        [InlineKeyboardButton("Most Recent", callback_data="open_settings_submenu_new")],
+        [InlineKeyboardButton("Last Updated 🔄", callback_data="open_settings_submenu_updated")],
+        [InlineKeyboardButton("Most Recent 🆕", callback_data="open_settings_submenu_new")],
         [InlineKeyboardButton("◀️ Back", callback_data="back_to_main_menu")]
     ])
     await callback_query.message.edit_text(text=text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -611,8 +635,11 @@ async def open_settings_submenu_updated(client, callback_query: CallbackQuery):
     set_user_mode(user_id, "settings_submenu_updated")
     filters_upd = load_user_filters_updated(user_id)
     current_filters_text = format_filters(filters_upd)
+    updated_enabled = get_send_updated_enabled(user_id)
+    status_btn_text = "Last Updated: ON ✅" if updated_enabled else "Last Updated: OFF ❌"
     text = SETTINGS_SUBMENU_TEXT_UPDATED.format(current_filters=current_filters_text)
     kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(status_btn_text, callback_data="toggle_send_updated")],
         [InlineKeyboardButton("◀️ Back", callback_data="back_to_settings_main")]
     ])
     await callback_query.message.edit_text(text=text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -624,11 +651,56 @@ async def open_settings_submenu_new(client, callback_query: CallbackQuery):
     set_user_mode(user_id, "settings_submenu_new")
     filters_n = load_user_filters_new(user_id)
     current_filters_text = format_filters(filters_n)
+    new_enabled = get_send_new_enabled(user_id)
+    status_btn_text = "Most Recent: ON ✅" if new_enabled else "Most Recent: OFF ❌"
     text = SETTINGS_SUBMENU_TEXT_NEW.format(current_filters=current_filters_text)
     kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(status_btn_text, callback_data="toggle_send_new")],
         [InlineKeyboardButton("◀️ Back", callback_data="back_to_settings_main")]
     ])
     await callback_query.message.edit_text(text=text, parse_mode=ParseMode.HTML, reply_markup=kb)
+
+
+@app.on_callback_query(filters.regex("^toggle_send_updated$"))
+async def toggle_send_updated(client, callback_query: CallbackQuery):
+    user_id = callback_query.from_user.id
+    current = get_send_updated_enabled(user_id)
+    set_send_updated_enabled(user_id, not current)
+    filters_upd = load_user_filters_updated(user_id)
+    current_filters_text = format_filters(filters_upd)
+    updated_enabled = get_send_updated_enabled(user_id)
+    status_btn_text = "Last Updated: ON ✅" if updated_enabled else "Last Updated: OFF ❌"
+    text = SETTINGS_SUBMENU_TEXT_UPDATED.format(current_filters=current_filters_text)
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(status_btn_text, callback_data="toggle_send_updated")],
+        [InlineKeyboardButton("◀️ Back", callback_data="back_to_settings_main")]
+    ])
+    try:
+        await callback_query.message.edit_text(text=text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    except MessageNotModified:
+        pass
+    await callback_query.answer()
+
+
+@app.on_callback_query(filters.regex("^toggle_send_new$"))
+async def toggle_send_new(client, callback_query: CallbackQuery):
+    user_id = callback_query.from_user.id
+    current = get_send_new_enabled(user_id)
+    set_send_new_enabled(user_id, not current)
+    filters_n = load_user_filters_new(user_id)
+    current_filters_text = format_filters(filters_n)
+    new_enabled = get_send_new_enabled(user_id)
+    status_btn_text = "Most Recent: ON ✅" if new_enabled else "Most Recent: OFF ❌"
+    text = SETTINGS_SUBMENU_TEXT_NEW.format(current_filters=current_filters_text)
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(status_btn_text, callback_data="toggle_send_new")],
+        [InlineKeyboardButton("◀️ Back", callback_data="back_to_settings_main")]
+    ])
+    try:
+        await callback_query.message.edit_text(text=text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    except MessageNotModified:
+        pass
+    await callback_query.answer()
 
 
 @app.on_callback_query(filters.regex("^back_to_settings_main$"))
@@ -779,12 +851,14 @@ async def monitor_workshops(client, user_id):
                 known_items_new = load_game_items_info_new(user_id, gid)
                 first_updated = (last_upd is None)
                 first_new = (last_new is None)
-                for it in new_updated:
-                    await process_and_send_item(known_items, user_id, gid, gname, it, client, not first_updated, "updated")
-                save_game_items_info(user_id, gid, known_items)
-                for it in new_new:
-                    await process_and_send_item_new(known_items_new, user_id, gid, gname, it, client, not first_new, "new")
-                save_game_items_info_new(user_id, gid, known_items_new)
+                if get_send_updated_enabled(user_id):
+                    for it in new_updated:
+                        await process_and_send_item(known_items, user_id, gid, gname, it, client, not first_updated, "updated")
+                    save_game_items_info(user_id, gid, known_items)
+                if get_send_new_enabled(user_id):
+                    for it in new_new:
+                        await process_and_send_item_new(known_items_new, user_id, gid, gname, it, client, not first_new, "new")
+                    save_game_items_info_new(user_id, gid, known_items_new)
             await asyncio.sleep(10)
     except asyncio.CancelledError:
         pass
@@ -923,6 +997,8 @@ async def handle_incoming_private(client, message):
                     show_txt,
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("Last Updated: ON ✅" if get_send_updated_enabled(user_id) else "Last Updated: OFF ❌",
+                                              callback_data="toggle_send_updated")],
                         [InlineKeyboardButton("◀️ Back", callback_data="back_to_settings_main")]
                     ])
                 )
@@ -949,6 +1025,8 @@ async def handle_incoming_private(client, message):
                     show_txt,
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("Last Updated: ON ✅" if get_send_updated_enabled(user_id) else "Last Updated: OFF ❌",
+                                              callback_data="toggle_send_updated")],
                         [InlineKeyboardButton("◀️ Back", callback_data="back_to_settings_main")]
                     ])
                 )
@@ -973,6 +1051,8 @@ async def handle_incoming_private(client, message):
                     show_txt,
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("Most Recent: ON ✅" if get_send_new_enabled(user_id) else "Most Recent: OFF ❌",
+                                              callback_data="toggle_send_new")],
                         [InlineKeyboardButton("◀️ Back", callback_data="back_to_settings_main")]
                     ])
                 )
@@ -999,6 +1079,8 @@ async def handle_incoming_private(client, message):
                     show_txt,
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("Most Recent: ON ✅" if get_send_new_enabled(user_id) else "Most Recent: OFF ❌",
+                                              callback_data="toggle_send_new")],
                         [InlineKeyboardButton("◀️ Back", callback_data="back_to_settings_main")]
                     ])
                 )
