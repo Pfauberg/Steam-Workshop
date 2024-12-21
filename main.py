@@ -33,7 +33,7 @@ MONITORING_NOT_RUNNING = "Monitoring is not running."
 SET_DISABLED_DURING_MONITORING = "You cannot modify the game list while monitoring is running."
 
 WORKSHOP_ITEM_MESSAGE = (
-    "<b>[ {game_name} ] – {title}</b>\n\n"
+    "<b>[ {game_name} ] – {title}</b> <i>{item_type}</i>\n\n"
     "<b>💾 Size:</b> {file_size}\n\n"
     "<b>📥 Subscriptions:</b> {subscriptions} ({lifetime_subscriptions})\n\n"
     "<b>⭐ Favorited:</b> {favorited} ({lifetime_favorited})\n\n"
@@ -109,6 +109,8 @@ def get_user_data(user_id):
             "filters": {},
             "known_items": {},
             "last_items": {},
+            "known_items_new": {},
+            "last_items_new": {},
             "runtime": {
                 "is_monitoring": False,
                 "last_messages": {},
@@ -172,6 +174,8 @@ def set_user_filter(user_id, filter_name, filter_data):
     user_data["filters"] = filters
     user_data["known_items"] = {}
     user_data["last_items"] = {}
+    user_data["known_items_new"] = {}
+    user_data["last_items_new"] = {}
     save_user_data(user_id, user_data)
 
 
@@ -189,6 +193,20 @@ def save_game_items_info(user_id, game_id, items_dict):
     save_user_data(user_id, user_data)
 
 
+def load_game_items_info_new(user_id, game_id):
+    _, user_data = get_user_data(user_id)
+    known_items_new = user_data.get("known_items_new", {})
+    return known_items_new.get(game_id, {})
+
+
+def save_game_items_info_new(user_id, game_id, items_dict):
+    data, user_data = get_user_data(user_id)
+    known_items_new = user_data.get("known_items_new", {})
+    known_items_new[game_id] = items_dict
+    user_data["known_items_new"] = known_items_new
+    save_user_data(user_id, user_data)
+
+
 def get_last_publishedfileid(user_id, game_id):
     _, user_data = get_user_data(user_id)
     last_items = user_data.get("last_items", {})
@@ -200,6 +218,20 @@ def set_last_publishedfileid(user_id, game_id, file_id):
     last_items = user_data.get("last_items", {})
     last_items[game_id] = file_id
     user_data["last_items"] = last_items
+    save_user_data(user_id, user_data)
+
+
+def get_last_publishedfileid_new(user_id, game_id):
+    _, user_data = get_user_data(user_id)
+    last_items_new = user_data.get("last_items_new", {})
+    return last_items_new.get(game_id)
+
+
+def set_last_publishedfileid_new(user_id, game_id, file_id):
+    data, user_data = get_user_data(user_id)
+    last_items_new = user_data.get("last_items_new", {})
+    last_items_new[game_id] = file_id
+    user_data["last_items_new"] = last_items_new
     save_user_data(user_id, user_data)
 
 
@@ -656,8 +688,16 @@ async def remove_game(client, message):
             last_items = user_data.get("last_items", {})
             if game_id in last_items:
                 del last_items[game_id]
+            known_items_new = user_data.get("known_items_new", {})
+            if game_id in known_items_new:
+                del known_items_new[game_id]
+            last_items_new = user_data.get("last_items_new", {})
+            if game_id in last_items_new:
+                del last_items_new[game_id]
             user_data["known_items"] = known_items
             user_data["last_items"] = last_items
+            user_data["known_items_new"] = known_items_new
+            user_data["last_items_new"] = last_items_new
             save_user_data(user_id, user_data)
             response_text = REMOVE_GAME_SUCCESS.format(game_id=game_id, game_name=removed_game)
         else:
@@ -672,15 +712,42 @@ async def monitor_workshops(client, user_id):
                 break
             steam_games = load_games(user_id)
             for game_id, game_name in steam_games.items():
-                last_publishedfileid = get_last_publishedfileid(user_id, game_id)
-                new_items = await get_new_workshop_items(game_id, last_publishedfileid)
+                last_publishedfileid_updated = get_last_publishedfileid(user_id, game_id)
+                last_publishedfileid_new = get_last_publishedfileid_new(user_id, game_id)
+                new_items_updated = await get_new_workshop_items(21, game_id, last_publishedfileid_updated, "time_updated")
+                new_items_new = await get_new_workshop_items(1, game_id, last_publishedfileid_new, "time_created")
+                if new_items_updated:
+                    set_last_publishedfileid(user_id, game_id, new_items_updated[0]['publishedfileid'])
+                if new_items_new:
+                    set_last_publishedfileid_new(user_id, game_id, new_items_new[0]['publishedfileid'])
                 known_items = load_game_items_info(user_id, game_id)
-                if new_items:
-                    set_last_publishedfileid(user_id, game_id, new_items[0]['publishedfileid'])
-                    first = True if last_publishedfileid is None else False
-                    for item in new_items:
-                        await process_and_send_item(known_items, user_id, game_id, game_name, item, client, first)
-                    save_game_items_info(user_id, game_id, known_items)
+                known_items_new = load_game_items_info_new(user_id, game_id)
+                first_updated = True if last_publishedfileid_updated is None else False
+                first_new = True if last_publishedfileid_new is None else False
+                for item in new_items_updated:
+                    await process_and_send_item(
+                        known_items,
+                        user_id,
+                        game_id,
+                        game_name,
+                        item,
+                        client,
+                        not first_updated,
+                        "updated"
+                    )
+                save_game_items_info(user_id, game_id, known_items)
+                for item in new_items_new:
+                    await process_and_send_item_new(
+                        known_items_new,
+                        user_id,
+                        game_id,
+                        game_name,
+                        item,
+                        client,
+                        not first_new,
+                        "new"
+                    )
+                save_game_items_info_new(user_id, game_id, known_items_new)
             await asyncio.sleep(10)
     except asyncio.CancelledError:
         pass
@@ -692,11 +759,11 @@ async def monitor_workshops(client, user_id):
             del running_tasks[user_id]
 
 
-async def get_new_workshop_items(game_id, last_publishedfileid):
+async def get_new_workshop_items(q_type, game_id, last_publishedfileid, sort_key):
     params = {
         'key': steam_api_key,
         'appid': game_id,
-        'query_type': 21,
+        'query_type': q_type,
         'numperpage': 10,
         'page': 1,
         'return_metadata': True,
@@ -718,7 +785,7 @@ async def get_new_workshop_items(game_id, last_publishedfileid):
         items = data.get('response', {}).get('publishedfiledetails', [])
         if not items:
             return []
-        items.sort(key=lambda x: x.get('time_updated', 0), reverse=True)
+        items.sort(key=lambda x: x.get(sort_key, 0), reverse=True)
         if not last_publishedfileid:
             return items
         new_items = []
@@ -731,7 +798,7 @@ async def get_new_workshop_items(game_id, last_publishedfileid):
         return []
 
 
-async def process_and_send_item(known_items, user_id, game_id, game_name, item, client, send_if_new_or_updated):
+async def process_and_send_item(known_items, user_id, game_id, game_name, item, client, send_if_new_or_updated, item_type):
     publishedfileid = item.get('publishedfileid')
     time_updated = int(item.get('time_updated', 0))
     old_time = known_items.get(publishedfileid, 0)
@@ -743,12 +810,31 @@ async def process_and_send_item(known_items, user_id, game_id, game_name, item, 
                 del known_items[oldest_item_id]
             else:
                 break
-        save_game_items_info(user_id, game_id, known_items)
         if send_if_new_or_updated and check_filters(user_id, item):
-            await send_workshop_item(client, user_id, game_name, item)
+            await send_workshop_item(client, user_id, game_name, item, item_type)
 
 
-async def send_workshop_item(client, user_id, game_name, item):
+async def process_and_send_item_new(known_items_new, user_id, game_id, game_name, item, client, send_if_new_or_updated, item_type):
+    publishedfileid = item.get('publishedfileid')
+    time_created = int(item.get('time_created', 0))
+    old_time = known_items_new.get(publishedfileid, 0)
+    if time_created > old_time:
+        known_items_new[publishedfileid] = time_created
+        while len(known_items_new) > 100:
+            oldest_item_id = min(known_items_new, key=known_items_new.get)
+            if oldest_item_id != publishedfileid:
+                del known_items_new[oldest_item_id]
+            else:
+                break
+        if send_if_new_or_updated and check_filters(user_id, item):
+            await send_workshop_item(client, user_id, game_name, item, item_type)
+
+
+async def send_workshop_item(client, user_id, game_name, item, item_type):
+    if item_type == "updated":
+        itype = " (updated)"
+    else:
+        itype = " (new)"
     title = item.get('title', 'No Title')
     file_size_bytes = int(item.get('file_size', 0))
     file_size = "N/A"
@@ -774,7 +860,8 @@ async def send_workshop_item(client, user_id, game_name, item):
         lifetime_subscriptions=lifetime_subscriptions,
         lifetime_favorited=lifetime_favorited,
         tags=tags,
-        item_url=item_url
+        item_url=item_url,
+        item_type=itype
     )
     await client.send_message(chat_id=user_id, text=message_text, parse_mode=ParseMode.HTML)
 
@@ -792,6 +879,8 @@ async def handle_incoming_private(client, message):
             data, user_data = get_user_data(user_id)
             user_data["known_items"] = {}
             user_data["last_items"] = {}
+            user_data["known_items_new"] = {}
+            user_data["last_items_new"] = {}
             save_user_data(user_id, user_data)
             user_filters = get_user_filters(user_id)
             current_filters_text = format_filters(user_filters)
