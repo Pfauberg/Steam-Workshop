@@ -9,12 +9,10 @@ from pyrogram.types import BotCommand, InlineKeyboardMarkup, InlineKeyboardButto
 from pyrogram.enums import ParseMode
 from pyrogram.errors import MessageNotModified
 
-
 GAME_LIST_HEADER = "<b>Steam games list:</b>"
 GAME_LIST_EMPTY = "No games added yet."
 ADD_GAME_USAGE = "To add a game, type: <code>Add GAME_ID</code> or <code>Add URL</code>"
 REMOVE_GAME_USAGE = "To remove a game, type: <code>Rm GAME_ID</code>"
-
 ADD_GAME_SUCCESS = "Game [ <code>{game_id}</code> ] - <b>\"{game_name}\"</b> has been added to your list."
 ADD_GAME_DUPLICATE = "Game [ <code>{game_id}</code> ] - <b>\"{game_name}\"</b> is already in your list."
 ADD_GAME_INVALID = "Invalid game ID: [ <code>{game_id}</code> ]. {error_message}"
@@ -24,7 +22,6 @@ REMOVE_GAME_NOT_FOUND = "Game [ <code>{game_id}</code> ] is not in your list."
 INVALID_ADD_FORMAT = "Invalid format. Use: <code>add GAME_ID</code> or <code>add URL</code>"
 INVALID_REMOVE_FORMAT = "Incorrect format. Use: <code>rm GAME_ID</code>"
 WORKSHOP_CHECK_FAILED = "Could not check if the game has a Steam Workshop."
-
 MONITORING_STARTED = "Monitoring started."
 MONITORING_ALREADY_RUNNING = "Monitoring is already running."
 MONITORING_NO_GAMES = "You have no games added for monitoring."
@@ -49,7 +46,29 @@ SET_MENU_TEMPLATE = (
     "{footer}"
 )
 
-WELCOME_MESSAGE = "<b>❗️ W E L C O M E ❗️</b>"
+WELCOME_MESSAGE = (
+    "<b>🎮 Welcome to Steam Workshop Telegram Bot 🎮</b>\n"
+    "<blockquote>This bot helps you monitor updates and new items in the Steam Workshop for your favorite games. "
+    "You will receive notifications about new or updated items with detailed information about each item.</blockquote>\n\n"
+    "<b>Navigation System:</b>\n"
+    "• <b>/start</b>: Displays the main menu.\n"
+    "• <b>Add Game:</b> Add a game to your list for monitoring by sending:\n"
+    "  - <code>add GAME_ID</code>\n"
+    "  - or <code>add URL</code>\n"
+    "• <b>Remove Game:</b> Remove a game from your list by sending:\n"
+    "  - <code>rm GAME_ID</code>\n"
+    "• <b>Settings:</b> Configure filters for updates based on parameters such as:\n"
+    "  - File size\n"
+    "  - Subscriptions\n"
+    "  - Favorites\n"
+    "  Use commands like <code>set size >100mb</code> or <code>reset</code> to adjust or clear filters.\n"
+    "• <b>Run/Stop Monitoring:</b> Inline buttons to start or stop monitoring your selected games.\n\n"
+    "<b>How to Start:</b>\n"
+    "1️⃣ Add a game by typing <code>add GAME_ID</code> or pasting the game URL.\n"
+    "2️⃣ Start monitoring by clicking the <b>🟢 Run</b> button.\n"
+    "3️⃣ Apply filters in settings to customize your notifications (optional).\n\n"
+    "Need to see this message? Type <b>/help</b> to see it.\n\n"
+)
 
 SETTINGS_SUBMENU_TEXT_UPDATED = (
     "<b>[ Last Updated ] ⚙️ Settings Page</b> ⚙️\n\n"
@@ -87,7 +106,6 @@ SETTINGS_SUBMENU_TEXT_NEW = (
     "<b>To reset all filters, type:</b> <code>Reset</code>"
 )
 
-
 config = configparser.ConfigParser()
 config.read('config.ini')
 
@@ -99,7 +117,6 @@ steam_api_key = config["steam"]["STEAM_API_KEY"].strip('"')
 app = Client("my_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
 
 running_tasks = {}
-
 USERS_FILE = "users.json"
 
 if not os.path.exists(USERS_FILE):
