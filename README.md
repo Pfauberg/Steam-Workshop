@@ -154,6 +154,6 @@ The bot provides a clear interface where the required command structures are dis
 
 ## **🌟 Try It Out**
 
-You can test the bot directly on Telegram: [@steam\_workshop\_infobot](https://t.me/steam_workshop_infobot)
+You can test the bot directly on Telegram: [@steam\_workshop\_infobot](https://t.me/steam_workshop_infobot) [Temporarily unavailable]
 
 ---
